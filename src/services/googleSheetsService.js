@@ -339,6 +339,43 @@ class GoogleSheetsService {
     console.warn('Unexpected date format:', dateStr);
     return dateStr;
   }
+
+  getTotalArea(orders) {
+    if (!orders || !Array.isArray(orders)) return '0.00';
+    return orders.reduce((sum, order) => sum + parseFloat(order.area || 0), 0).toFixed(2);
+  }
+
+  getCellWidth() {
+    return 'w-full';
+  }
+
+  async handleOrderMove(order, sourceDate, targetDate, updateDeliveryDate = false) {
+    try {
+      const rowIndex = this.orders.findIndex(o => o.orderNumber === order.orderNumber);
+      await this.updatePlannedDate(rowIndex, targetDate);
+      
+      if (updateDeliveryDate) {
+        await this.updateOrderStatus(rowIndex, order.status, targetDate);
+      }
+      
+      return await this.loadOrders();
+    } catch (error) {
+      console.error('Error moving order:', error);
+      throw new Error('Ошибка при перемещении заказа');
+    }
+  }
+
+  async handleCheckboxChange(order, isChecked) {
+    try {
+      const rowIndex = this.orders.findIndex(o => o.orderNumber === order.orderNumber);
+      const newStatus = isChecked ? 'выдан' : 'готов';
+      await this.updateOrderStatus(rowIndex, newStatus);
+      return await this.loadOrders();
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      throw new Error('Ошибка при обновлении статуса заказа');
+    }
+  }
 }
 
 export const googleSheetsService = new GoogleSheetsService();

@@ -1,131 +1,48 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
-import { format, addDays, subDays, isWeekend } from 'date-fns';
-import { ru } from 'date-fns/locale';
-import { googleSheetsService } from '../services/googleSheetsService';
-import { STATUSES } from '../constants';
+import React, { useState } from 'react';
+import { formatDate, getDayName } from '../utils/dateUtils';
+import ConfirmationModal from './ConfirmationModal';
+import { Plus, Minus, Table, Columns } from 'lucide-react';
 
-// Компонент модального окна
-const ConfirmationModal = ({ isOpen, onClose, onConfirm, date }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
-        <h3 className="text-lg font-medium mb-4">
-          Изменить дату выдачи выполненного заказа на {date}?
-        </h3>
-        <div className="flex justify-end gap-4">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-          >
-            Нет
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
-          >
-            Ок
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-function OrderDistributionTable() {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(new Date());
+const OrderDistributionTable = ({ 
+  days = [],
+  ordersMap = {},
+  onOrderMove, 
+  hasEditAccess, 
+  handleCheckboxChange,
+  getTotalArea,
+  getCellWidth,
+  orders = [],
+  setOrders,
+  googleSheetsService,
+  setError 
+}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState(null);
+  const [scale, setScale] = useState('default'); // 'default', 'medium', 'large', 'full'
+  const [view, setView] = useState('table'); // 'table', 'kanban'
 
-  // Получение дат для отображения (неделя)
-  const dates = useMemo(() => {
-    const startDate = subDays(selectedDate, 2);
-    return Array.from({ length: 12 }, (_, index) => {
-      const date = addDays(startDate, index);
-      return format(date, 'dd.MM.yyyy');
-    }).filter(date => {
-      const dayOfWeek = new Date(date.split('.').reverse().join('-')).getDay();
-      return dayOfWeek !== 0; // Исключаем воскресенья
-    });
-  }, [selectedDate]);
+  if (!days || !Array.isArray(days)) {
+    return <div>Loading...</div>;
+  }
 
-  // Загрузка заказов
-  useEffect(() => {
-    const loadOrders = async () => {
-      try {
-        setLoading(true);
-        const fetchedOrders = await googleSheetsService.loadOrders();
-        setOrders(fetchedOrders);
-        setError(null);
-      } catch (err) {
-        setError('Ошибка при загрузке заказов');
-        console.error('Error loading orders:', err);
-      } finally {
-        setLoading(false);
+  const executeOrderMove = async (order, sourceDate, targetDate, updateDeliveryDate = false) => {
+    try {
+      const rowIndex = orders.findIndex(o => o.orderNumber === order.orderNumber);
+      
+      await googleSheetsService.updatePlannedDate(rowIndex, targetDate);
+      
+      if (updateDeliveryDate) {
+        await googleSheetsService.updateOrderStatus(rowIndex, order.status, targetDate);
       }
-    };
-
-    loadOrders();
-  }, []);
-
-  // Отслеживание изменений
-  useEffect(() => {
-    let unsubscribe;
-
-    const setupWatcher = async () => {
-      try {
-        unsubscribe = await googleSheetsService.watchForChanges((updatedOrders) => {
-          setOrders(updatedOrders);
-        });
-      } catch (error) {
-        console.error('Error setting up watcher:', error);
-      }
-    };
-
-    setupWatcher();
-
-    return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
-    };
-  }, []);
-
-  // Группировка заказов по датам
-  const ordersByDate = useMemo(() => {
-    return dates.reduce((acc, date) => {
-      acc[date] = orders.filter(order => order.plannedDate === date);
-      return acc;
-    }, {});
-  }, [orders, dates]);
-
-  // Подсчет общей площади для даты
-  const calculateTotalArea = (date) => {
-    return ordersByDate[date]?.reduce((sum, order) => sum + (order.area || 0), 0) || 0;
+      
+      const updatedOrders = await googleSheetsService.loadOrders();
+      setOrders(updatedOrders);
+    } catch (error) {
+      console.error('Error executing order move:', error);
+      setError('Ошибка при обновлении заказа');
+    }
   };
 
-  // Обработка переноса заказа
-  const handleDragEnd = async (result) => {
-    if (!result.destination) return;
-
-    const sourceDate = result.source.droppableId;
-    const targetDate = result.destination.droppableId;
-    
-    if (sourceDate === targetDate) return;
-
-    const order = ordersByDate[sourceDate].find(
-      (o, index) => index === result.source.index
-    );
-
-    await handleOrderMove(order, sourceDate, targetDate);
-  };
-
-  // Обработка переноса заказа с проверкой статуса
   const handleOrderMove = async (order, sourceDate, targetDate) => {
     try {
       const isCompleted = order.status === 'готов' || order.status === 'выдан';
@@ -147,26 +64,6 @@ function OrderDistributionTable() {
     }
   };
 
-  // Выполнение переноса заказа
-  const executeOrderMove = async (order, sourceDate, targetDate, updateDeliveryDate = false) => {
-    try {
-      const rowIndex = orders.findIndex(o => o.orderNumber === order.orderNumber);
-      
-      await googleSheetsService.updatePlannedDate(rowIndex, targetDate);
-      
-      if (updateDeliveryDate) {
-        await googleSheetsService.updateOrderStatus(rowIndex, order.status, targetDate);
-      }
-      
-      const updatedOrders = await googleSheetsService.loadOrders();
-      setOrders(updatedOrders);
-    } catch (error) {
-      console.error('Error executing order move:', error);
-      setError('Ошибка при обновлении заказа');
-    }
-  };
-
-  // Обработчики модального окна
   const handleModalConfirm = async () => {
     if (pendingMove) {
       const { order, sourceDate, targetDate } = pendingMove;
@@ -185,109 +82,168 @@ function OrderDistributionTable() {
     setPendingMove(null);
   };
 
-  // Обработка изменения статуса заказа
-  const handleStatusChange = async (order, rowIndex) => {
-    try {
-      const currentDate = format(new Date(), 'dd.MM.yyyy');
-      await googleSheetsService.updateOrderStatus(rowIndex, STATUSES.COMPLETED, currentDate);
-      
-      const updatedOrders = await googleSheetsService.loadOrders();
-      setOrders(updatedOrders);
-    } catch (error) {
-      console.error('Error updating order status:', error);
-      setError('Ошибка при обновлении статуса заказа');
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDragStart = (e, order, sourceDate) => {
+    e.dataTransfer.setData('order', JSON.stringify(order));
+    e.dataTransfer.setData('sourceDate', sourceDate);
+  };
+
+  const handleDrop = (e, targetDate) => {
+    e.preventDefault();
+    const order = JSON.parse(e.dataTransfer.getData('order'));
+    const sourceDate = e.dataTransfer.getData('sourceDate');
+    handleOrderMove(order, sourceDate, targetDate);
+  };
+
+  const getGridColumns = () => {
+    if (view === 'kanban') {
+      return 'flex overflow-x-auto';
+    }
+    switch(scale) {
+      case 'default':
+        return 'grid grid-cols-7';
+      case 'medium':
+        return 'grid grid-cols-4';
+      case 'large':
+        return 'grid grid-cols-2';
+      case 'full':
+        return 'grid grid-cols-1';
+      default:
+        return 'grid grid-cols-7';
     }
   };
 
-  if (loading) {
-    return <div className="text-center py-4">Загрузка...</div>;
-  }
-
-  if (error) {
-    return <div className="text-center py-4 text-red-500">{error}</div>;
-  }
-
   return (
-    <div className="container mx-auto p-4">
-      <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="grid grid-cols-6 gap-4">
-          {dates.map((date) => (
-            <div key={date} className="border rounded-lg p-2">
-              <div className="text-center mb-2">
-                <div className="font-bold">
-                  {format(new Date(date.split('.').reverse().join('-')), 'EEEE', { locale: ru })}
-                </div>
-                <div>{date}</div>
-                <div className="text-sm text-gray-600">
-                  Общая площадь: {calculateTotalArea(date).toFixed(2)} м²
+    <div className="p-4">
+      <div className="flex justify-between mb-4">
+        {/* Кнопки масштаба слева */}
+        <div className="flex gap-2">
+          <button 
+            className="p-2 border rounded hover:bg-gray-100"
+            onClick={() => setScale(prev => {
+              switch(prev) {
+                case 'full': return 'large';
+                case 'large': return 'medium';
+                case 'medium': return 'default';
+                default: return 'default';
+              }
+            })}
+          >
+            <Minus className="w-6 h-6" />
+          </button>
+          <button 
+            className="p-2 border rounded hover:bg-gray-100"
+            onClick={() => setScale(prev => {
+              switch(prev) {
+                case 'default': return 'medium';
+                case 'medium': return 'large';
+                case 'large': return 'full';
+                default: return 'full';
+              }
+            })}
+          >
+            <Plus className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Переключатель вида справа */}
+        <button
+          className="p-2 border rounded hover:bg-gray-100"
+          onClick={() => setView(prev => prev === 'table' ? 'kanban' : 'table')}
+        >
+          {view === 'table' ? <Columns className="w-6 h-6" /> : <Table className="w-6 h-6" />}
+        </button>
+      </div>
+
+      <div className={getGridColumns()}>
+        {days.map((day) => {
+          const formattedDate = formatDate(day);
+          const dayOrders = ordersMap[formattedDate] || [];
+          const allCompleted = dayOrders.length > 0 && dayOrders.every(order => order.status === 'выдан');
+
+          return (
+            <div
+              key={formatDate(day)}
+              className={`border-2 rounded p-4 ${getCellWidth()} ${
+                dayOrders.length 
+                  ? allCompleted
+                    ? 'border-green-50'
+                    : 'border-blue-500'
+                  : 'border-gray-200'
+              }`}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, day)}
+            >
+              <div className="text-center mb-4">
+                <div className="text-lg">
+                  <span className="font-bold">{getDayName(day)}</span>
+                  <span className="font-normal"> ({formatDate(day)}) - </span>
+                  <span className="font-bold text-amber-700">{getTotalArea(dayOrders)} кв.м.</span>
                 </div>
               </div>
-              
-              <Droppable droppableId={date}>
-                {(provided) => (
+
+              <div className="space-y-2">
+                {dayOrders.map((order) => (
                   <div
-                    ref={provided.innerRef}
-                    {...provided.droppableProps}
-                    className="min-h-[100px]"
+                    key={order.orderNumber}
+                    draggable={hasEditAccess}
+                    onDragStart={(e) => handleDragStart(e, order, formattedDate)}
+                    className={`p-2 border rounded ${
+                      order.status === 'выдан' ? 'bg-green-50' : 'bg-white'
+                    } ${!hasEditAccess ? 'cursor-default' : 'cursor-move'}`}
                   >
-                    {ordersByDate[date]?.map((order, index) => (
-                      <Draggable
-                        key={order.orderNumber}
-                        draggableId={order.orderNumber}
-                        index={index}
-                      >
-                        {(provided, snapshot) => (
-                          <div
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
-                            className={`p-2 mb-2 rounded ${
-                              order.status === STATUSES.COMPLETED
-                                ? 'bg-gray-200'
-                                : 'bg-white'
-                            } border ${snapshot.isDragging ? 'shadow-lg' : ''}`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <input
-                                type="checkbox"
-                                checked={order.status === STATUSES.COMPLETED}
-                                onChange={() => handleStatusChange(order, index)}
-                                className="mr-2"
-                              />
-                              <div>
-                                <div>
-                                  {order.orderNumber}. {order.millingType}.{' '}
-                                  {order.area} кв.м.
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                  {order.orderDate} - {order.client}
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                  {order.payment} - {order.phone}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={order.status === 'выдан'}
+                          onChange={(e) => handleCheckboxChange(order, e.target.checked)}
+                          disabled={!hasEditAccess}
+                          className="form-checkbox"
+                        />
+                        <span>
+                          {order.orderNumber}
+                          {order.prisadkaNumber && (
+                            <span className="text-red-600">{`-${order.prisadkaNumber}`}</span>
+                          )}
+                          {`. ${order.millingType || '        '} - ${parseFloat(order.area)}кв.м.`}
+                        </span>
+                      </label>
+                      <div className="text-xs text-gray-500 pl-6">
+                        {`${order.orderDate} • ${order.client} • ${order.payment}`}
+                        {order.phone && (
+                          <>
+                            {' • '}
+                            <a 
+                              href={`tel:${order.phone}`}
+                              className="text-blue-500 hover:text-blue-700"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {order.phone}
+                            </a>
+                          </>
                         )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
+                      </div>
+                    </div>
                   </div>
-                )}
-              </Droppable>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
-      </DragDropContext>
+          );
+        })}
+      </div>
 
       <ConfirmationModal
         isOpen={isModalOpen}
-        onClose={handleModalClose}
+        onClose={() => setIsModalOpen(false)}
         onConfirm={handleModalConfirm}
-        date={pendingMove?.targetDate || ''}
+        message="Обновить дату выдачи заказа?"
       />
     </div>
   );
-}
+};
 
 export default OrderDistributionTable;
