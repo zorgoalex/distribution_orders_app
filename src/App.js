@@ -1,11 +1,11 @@
-// src/App.js
 import React, { useState, useEffect } from 'react';
+import { addDays, subDays, isSunday, max } from 'date-fns';
 import LoginPage from './components/LoginPage';
 import OrderDistributionTable from './components/OrderDistributionTable';
 import { googleSheetsService } from './services/googleSheetsService';
 import './App.css';
 
-function App() {
+export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [orders, setOrders] = useState([]);
   const [days, setDays] = useState([]);
@@ -17,62 +17,60 @@ function App() {
     if (isAuthenticated) {
       loadOrders();
       checkEditAccess();
-      initializeDays();
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (orders.length > 0) {
+      initializeDays();
+      updateOrdersMap();
+    }
+  }, [orders]);
+
   const initializeDays = () => {
-    // Начальная дата (5 дней назад)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    const fiveDaysAgo = new Date(today);
-    fiveDaysAgo.setDate(today.getDate() - 5);
+    const startDate = subDays(today, 5);
     
-    // Находим максимальную дату планируемой выдачи
     const maxPlannedDate = orders.reduce((maxDate, order) => {
       if (!order.plannedDate) return maxDate;
       const plannedDate = new Date(order.plannedDate.split('.').reverse().join('-'));
-      return plannedDate > maxDate ? plannedDate : maxDate;
+      return max([maxDate, plannedDate]);
     }, today);
     
-    // Добавляем один день к максимальной дате
-    const endDate = new Date(maxPlannedDate);
-    endDate.setDate(endDate.getDate() + 1);
-    
-    console.log('Start date:', fiveDaysAgo.toLocaleDateString());
-    console.log('End date:', endDate.toLocaleDateString());
+    const endDate = addDays(maxPlannedDate, 1);
     
     const newDays = [];
-    let currentDate = new Date(fiveDaysAgo);
+    let currentDate = startDate;
     
-    // Добавляем дни от начальной до конечной даты
     while (currentDate <= endDate) {
-      if (currentDate.getDay() !== 0) { // Пропускаем воскресенья
+      if (!isSunday(currentDate)) {
         newDays.push(new Date(currentDate));
       }
-      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate = addDays(currentDate, 1);
     }
     
-    console.log('Generated days:', newDays.map(d => d.toLocaleDateString()));
     setDays(newDays);
+  };
+
+  const updateOrdersMap = () => {
+    const groupedOrders = orders.reduce((acc, order) => {
+      const date = order.plannedDate;
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(order);
+      return acc;
+    }, {});
+    setOrdersMap(groupedOrders);
   };
 
   const loadOrders = async () => {
     try {
       const loadedOrders = await googleSheetsService.loadOrders();
       setOrders(loadedOrders);
-      initializeDays();
-      
-      const groupedOrders = loadedOrders.reduce((acc, order) => {
-        const date = order.plannedDate;
-        if (!acc[date]) {
-          acc[date] = [];
-        }
-        acc[date].push(order);
-        return acc;
-      }, {});
-      setOrdersMap(groupedOrders);
+      // initializeDays and updateOrdersMap will be called automatically due to the useEffect
     } catch (error) {
       console.error('Error loading orders:', error);
       setError('Ошибка при загрузке заказов');
@@ -93,7 +91,6 @@ function App() {
     try {
       const updatedOrders = await googleSheetsService.handleOrderMove(order, sourceDate, targetDate);
       setOrders(updatedOrders);
-      await loadOrders();
     } catch (error) {
       setError(error.message);
     }
@@ -103,7 +100,6 @@ function App() {
     try {
       const updatedOrders = await googleSheetsService.handleCheckboxChange(order, isChecked);
       setOrders(updatedOrders);
-      await loadOrders();
     } catch (error) {
       setError(error.message);
     }
@@ -129,8 +125,7 @@ function App() {
           setError={setError}
         />
       )}
+      {error && <div className="error-message">{error}</div>}
     </div>
   );
 }
-
-export default App;
