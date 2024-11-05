@@ -4,7 +4,8 @@ import ConfirmationModal from './ConfirmationModal';
 import { Plus, Minus, Table, Columns } from 'lucide-react';
 
 const OrderDistributionTable = ({ 
-  days = [],
+  days,
+  setDays,
   ordersMap = {},
   onOrderMove, 
   hasEditAccess, 
@@ -20,10 +21,6 @@ const OrderDistributionTable = ({
   const [pendingMove, setPendingMove] = useState(null);
   const [scale, setScale] = useState('default'); // 'default', 'medium', 'large', 'full'
   const [view, setView] = useState('table'); // 'table', 'kanban'
-
-  if (!days || !Array.isArray(days)) {
-    return <div>Loading...</div>;
-  }
 
   const executeOrderMove = async (order, sourceDate, targetDate, updateDeliveryDate = false) => {
     try {
@@ -180,8 +177,13 @@ const OrderDistributionTable = ({
               <div className="text-center mb-4">
                 <div className="text-lg">
                   <span className="font-bold">{getDayName(day)}</span>
-                  <span className="font-normal"> ({formatDate(day)}) - </span>
-                  <span className="font-bold text-amber-700">{getTotalArea(dayOrders)} кв.м.</span>
+                  <span className="font-normal"> ({formatDate(day)})</span>
+                  {dayOrders.length > 0 && (
+                    <>
+                      <span className="font-normal"> - </span>
+                      <span className="font-bold text-amber-700">{getTotalArea(dayOrders)} кв.м.</span>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -191,9 +193,10 @@ const OrderDistributionTable = ({
                     key={order.orderNumber}
                     draggable={hasEditAccess}
                     onDragStart={(e) => handleDragStart(e, order, formattedDate)}
-                    className={`p-2 border rounded ${
-                      order.status === 'выдан' ? 'bg-green-50' : 'bg-white'
-                    } ${!hasEditAccess ? 'cursor-default' : 'cursor-move'}`}
+                    className={`p-2 border rounded 
+                      ${order.status === 'готов' ? 'border-green-500 border-2' : 'border-gray-200'} 
+                      ${order.status === 'выдан' ? 'bg-green-50' : 'bg-white'} 
+                      ${!hasEditAccess ? 'cursor-default' : 'cursor-move'}`}
                   >
                     <div className="flex flex-col gap-1">
                       <label className="flex items-center gap-2">
@@ -205,15 +208,23 @@ const OrderDistributionTable = ({
                           className="form-checkbox"
                         />
                         <span>
-                          <span className="font-bold text-blue-600">{order.orderNumber}</span>
+                          <span className="font-bold text-blue-600 text-base">{order.orderNumber}</span>
                           {order.prisadkaNumber && (
-                            <span className="font-bold text-red-600">{`-${order.prisadkaNumber}`}</span>
+                            <span className="font-bold text-red-600 text-base">{`-${order.prisadkaNumber}`}</span>
                           )}
-                          {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area)}кв.м.`}
+                          <span className="text-xs">
+                            {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area)}кв.м.`}
+                          </span>
                         </span>
                       </label>
                       <div className="text-xs text-gray-500 pl-6">
-                        {`${order.orderDate} • ${order.client} • ${order.payment}`}
+                        {`${order.orderDate} • ${order.client} • `}
+                        <span className={order.payment === 'Не оплачен' ? 'underline decoration-red-500 decoration-2' : ''}>
+                          {order.payment}
+                        </span>
+                        {order.status && (
+                          <> • <span>{order.status}</span></>
+                        )}
                         {order.phone && (
                           <>
                             {' • '}
