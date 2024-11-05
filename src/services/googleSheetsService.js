@@ -273,7 +273,7 @@ class GoogleSheetsService {
       throw new Error('Service not initialized');
     }
 
-    const CHECK_INTERVAL = 30000; // 30 секунд
+    const CHECK_INTERVAL = 3000; // 3 секунды между проверками
     
     const checkForChanges = async () => {
       try {
