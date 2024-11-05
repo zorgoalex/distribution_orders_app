@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatDate, getDayName } from '../utils/dateUtils';
 import ConfirmationModal from './ConfirmationModal';
 import { Plus, Minus, Table, Columns } from 'lucide-react';
@@ -113,6 +113,13 @@ const OrderDistributionTable = ({
     }
   };
 
+  useEffect(() => {
+    console.log('Orders with status:', orders.map(order => ({
+      number: order.orderNumber,
+      status: order.status
+    })));
+  }, [orders]);
+
   return (
     <div className="p-4">
       <div className="flex justify-between mb-4">
@@ -193,9 +200,9 @@ const OrderDistributionTable = ({
                     key={order.orderNumber}
                     draggable={hasEditAccess}
                     onDragStart={(e) => handleDragStart(e, order, formattedDate)}
-                    className={`p-2 border rounded 
-                      ${order.status === 'готов' ? 'border-green-500 border-2' : 'border-gray-200'} 
-                      ${order.status === 'выдан' ? 'bg-green-50' : 'bg-white'} 
+                    className={`p-2 rounded 
+                      ${order.status?.toLowerCase() === 'готов' ? 'border-2 border-green-500' : 'border border-gray-200'} 
+                      ${order.status?.toLowerCase() === 'выдан' ? 'bg-green-50' : 'bg-white'} 
                       ${!hasEditAccess ? 'cursor-default' : 'cursor-move'}`}
                   >
                     <div className="flex flex-col gap-1">
@@ -222,7 +229,7 @@ const OrderDistributionTable = ({
                         <span className={order.payment === 'Не оплачен' ? 'underline decoration-red-500 decoration-2' : ''}>
                           {order.payment}
                         </span>
-                        {order.status && (
+                        {order.status?.toLowerCase() === 'выдан' && (
                           <> • <span>{order.status}</span></>
                         )}
                         {order.phone && (
