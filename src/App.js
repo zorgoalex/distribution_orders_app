@@ -22,18 +22,21 @@ function App() {
   }, [isAuthenticated]);
 
   const initializeDays = () => {
+    // Начальная дата (5 дней назад)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
     const fiveDaysAgo = new Date(today);
     fiveDaysAgo.setDate(today.getDate() - 5);
     
+    // Находим максимальную дату планируемой выдачи
     const maxPlannedDate = orders.reduce((maxDate, order) => {
       if (!order.plannedDate) return maxDate;
       const plannedDate = new Date(order.plannedDate.split('.').reverse().join('-'));
       return plannedDate > maxDate ? plannedDate : maxDate;
     }, today);
     
+    // Добавляем один день к максимальной дате
     const endDate = new Date(maxPlannedDate);
     endDate.setDate(endDate.getDate() + 1);
     
@@ -43,8 +46,9 @@ function App() {
     const newDays = [];
     let currentDate = new Date(fiveDaysAgo);
     
+    // Добавляем дни от начальной до конечной даты
     while (currentDate <= endDate) {
-      if (currentDate.getDay() !== 0) {
+      if (currentDate.getDay() !== 0) { // Пропускаем воскресенья
         newDays.push(new Date(currentDate));
       }
       currentDate.setDate(currentDate.getDate() + 1);
