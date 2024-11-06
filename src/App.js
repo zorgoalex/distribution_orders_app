@@ -39,7 +39,16 @@ export default function App() {
       return max([maxDate, plannedDate]);
     }, today);
     
-    const endDate = addDays(maxPlannedDate, 1);
+    let endDate = addDays(maxPlannedDate, 1);
+    while (isSunday(endDate)) {
+      endDate = addDays(endDate, 1);
+    }
+    
+    console.log('Date range:', {
+      start: startDate.toLocaleDateString(),
+      maxPlanned: maxPlannedDate.toLocaleDateString(),
+      end: endDate.toLocaleDateString()
+    });
     
     const newDays = [];
     let currentDate = startDate;
@@ -51,6 +60,7 @@ export default function App() {
       currentDate = addDays(currentDate, 1);
     }
     
+    console.log('Generated days:', newDays.map(d => d.toLocaleDateString()));
     setDays(newDays);
   };
 
