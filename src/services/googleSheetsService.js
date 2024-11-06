@@ -6,6 +6,7 @@ class GoogleSheetsService {
     this.isInitialized = false;
     this.tokenClient = null;
     this.accessToken = null;
+    this.orders = [];
   }
 
   async loadGoogleAPI() {
@@ -200,8 +201,22 @@ class GoogleSheetsService {
       });
 
       console.log('Raw response from sheets:', response);
-      const orders = this.parseOrdersData(response.result.values);
-      console.log('Parsed orders:', orders);
+      const orders = response.result.values.map(row => ({
+        orderDate: row[0] || '',
+        orderNumber: row[1] || '',
+        prisadkaNumber: row[2] || '',
+        client: row[3] || '',
+        area: row[4] || '',
+        millingType: row[5] || '',
+        plannedDate: row[6] || '',
+        status: row[7] || '',
+        payment: row[8] || '',
+        remainingPayment: row[9] || '',
+        deliveryDate: row[10] || '',
+        phone: row[11] || ''
+      }));
+
+      this.orders = orders;
       return orders;
     } catch (error) {
       console.error('Error loading orders:', error);
@@ -209,57 +224,30 @@ class GoogleSheetsService {
     }
   }
 
-  parseOrdersData(rawData) {
-    if (!rawData) {
-      console.log('No raw data received');
-      return [];
-    }
-
-    console.log('Parsing raw data:', rawData);
-    
-    return rawData.map(row => {
-      let areaValue = 0;
-      if (row[4]) {
-        const normalizedArea = String(row[4]).replace(',', '.');
-        const parsedArea = Number(normalizedArea);
-        areaValue = !isNaN(parsedArea) ? parsedArea : 0;
+  async updateOrderStatus(rowIndex, newStatus, deliveryDate = null) {
+    try {
+      const updates = [];
+      
+      // Обновляем статус
+      updates.push({
+        range: `${GOOGLE_SHEETS_CONFIG.COLUMNS.STATUS}${rowIndex + 2}`,
+        values: [[newStatus]]
+      });
+      
+      // Если есть дата выдачи, обновляем её
+      if (deliveryDate) {
+        updates.push({
+          range: `${GOOGLE_SHEETS_CONFIG.COLUMNS.DELIVERY_DATE}${rowIndex + 2}`,
+          values: [[this.formatDate(deliveryDate)]]
+        });
       }
       
-      const order = {
-        orderDate: row[0],
-        orderNumber: row[1],
-        prisadkaNumber: row[2],
-        client: row[3],
-        area: areaValue,
-        millingType: row[5],
-        plannedDate: this.formatDate(row[6]),
-        status: row[7],
-        payment: row[8] ? row[8] : ' ', // Если значение пустое, ставим пробел
-        remainingPayment: row[9],
-        deliveryDate: row[10] ? this.formatDate(row[10]) : '',
-        phone: row[11]
-      };
-      console.log('Parsed order:', order);
-      return order;
-    });
-  }
-
-  async updateOrderStatus(rowIndex, status, deliveryDate) {
-    try {
+      // Выполняем batch update
       await this.gapi.client.sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
         resource: {
           valueInputOption: 'USER_ENTERED',
-          data: [
-            {
-              range: `H${rowIndex + 2}`,
-              values: [[status]]
-            },
-            {
-              range: `K${rowIndex + 2}`,
-              values: [[deliveryDate]]
-            }
-          ]
+          data: updates
         }
       });
     } catch (error) {
@@ -380,12 +368,25 @@ class GoogleSheetsService {
 
   async handleCheckboxChange(order, isChecked) {
     try {
+      if (!this.orders || !this.orders.length) {
+        throw new Error('Orders not loaded');
+      }
+
       const rowIndex = this.orders.findIndex(o => o.orderNumber === order.orderNumber);
-      const newStatus = isChecked ? 'выдан' : 'готов';
-      await this.updateOrderStatus(rowIndex, newStatus);
+      if (rowIndex === -1) {
+        throw new Error(`Order ${order.orderNumber} not found`);
+      }
+
+      console.log('Updating order:', {
+        orderNumber: order.orderNumber,
+        rowIndex,
+        newStatus: isChecked ? 'выдан' : 'готов'
+      });
+
+      await this.updateOrderStatus(rowIndex, isChecked ? 'выдан' : 'готов');
       return await this.loadOrders();
     } catch (error) {
-      console.error('Error updating order status:', error);
+      console.error('Error in handleCheckboxChange:', error);
       throw new Error('Ошибка при обновлении статуса заказа');
     }
   }
