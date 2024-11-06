@@ -28,6 +28,9 @@ cypress/videos/
 Thumbs.db
 .eslintcache
 *.tsbuildinfo
+instructions.txt
+OLD_*
+.cursorrules
 
 # Logs
 logs
