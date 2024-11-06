@@ -1,11 +1,10 @@
 import { GOOGLE_SHEETS_CONFIG } from '../config/googleSheets';
+import { format, parse } from 'date-fns';
 
 class GoogleSheetsService {
   constructor() {
     this.gapi = null;
-    this.isInitialized = false;
-    this.tokenClient = null;
-    this.accessToken = null;
+    this.orders = [];
   }
 
   async loadGoogleAPI() {
@@ -14,330 +13,83 @@ class GoogleSheetsService {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = 'https://apis.google.com/js/api.js';
-      script.onload = () => resolve(window.gapi);
-      script.onerror = reject;
-      document.body.appendChild(script);
-    });
-  }
-
-  async loadGoogleIdentityServices() {
-    if (window.google?.accounts?.oauth2) {
-      return window.google;
-    }
-
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
       script.onload = () => {
-        setTimeout(() => {
-          if (window.google?.accounts?.oauth2) {
-            resolve(window.google);
-          } else {
-            reject(new Error('Failed to load Google Identity Services'));
-          }
-        }, 100);
+        if (window.gapi) {
+          resolve(window.gapi);
+        } else {
+          reject(new Error('Failed to load Google API: window.gapi is undefined'));
+        }
       };
-      script.onerror = reject;
+      script.onerror = () => reject(new Error('Failed to load Google API script'));
       document.body.appendChild(script);
     });
   }
 
-  async initialize() {
-    if (this.isInitialized) {
-      return this.tokenClient;
-    }
-
+  async init() {
     try {
-      // 1. Load the Google API client library
+      console.log('Initializing Google API...');
       this.gapi = await this.loadGoogleAPI();
-
-      // 2. Initialize the library with API key
+      
+      console.log('Loading client and auth2...');
       await new Promise((resolve, reject) => {
-        this.gapi.load('client', {
+        this.gapi.load('client:auth2', {
           callback: resolve,
-          onerror: reject
+          onerror: (error) => reject(new Error(`Failed to load client:auth2: ${error.message}`))
         });
       });
 
-      // 3. Initialize the API client
+      console.log('Initializing gapi client...');
       await this.gapi.client.init({
         apiKey: GOOGLE_SHEETS_CONFIG.API_KEY,
-        discoveryDocs: [
-          'https://sheets.googleapis.com/$discovery/rest?version=v4',
-          'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'
-        ],
-      });
-
-      // 4. Load Google Identity Services and wait for it to be ready
-      const google = await this.loadGoogleIdentityServices();
-
-      // 5. Initialize token client with persistence
-      this.tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_SHEETS_CONFIG.CLIENT_ID,
+        clientId: GOOGLE_SHEETS_CONFIG.CLIENT_ID,
+        discoveryDocs: ["https://sheets.googleapis.com/$discovery/rest?version=v4"],
         scope: GOOGLE_SHEETS_CONFIG.SCOPES.join(' '),
-        prompt: '', // Suppress the prompt if we have a saved token
-        callback: (tokenResponse) => {
-          if (tokenResponse.error !== undefined) {
-            throw tokenResponse;
-          }
-          this.accessToken = tokenResponse.access_token;
-          this.gapi.client.setToken(tokenResponse);
-          
-          localStorage.setItem('gauth_token', JSON.stringify({
-            access_token: tokenResponse.access_token,
-            expires_at: Date.now() + (tokenResponse.expires_in * 1000)
-          }));
-        },
       });
 
-      const savedToken = localStorage.getItem('gauth_token');
-      if (savedToken) {
-        const tokenData = JSON.parse(savedToken);
-        const now = Date.now();
-        
-        if (tokenData.expires_at > now) {
-          this.accessToken = tokenData.access_token;
-          this.gapi.client.setToken({
-            access_token: tokenData.access_token
-          });
-        } else {
-          localStorage.removeItem('gauth_token');
-        }
-      }
-
-      this.isInitialized = true;
-      return this.tokenClient;
+      console.log('Google API initialized successfully');
     } catch (error) {
       console.error('Error initializing Google API:', error);
-      throw error;
+      throw new Error(`Failed to initialize Google API: ${error.message}`);
     }
   }
 
   async signIn() {
-    if (!this.isInitialized || !this.tokenClient) {
-      throw new Error('Service not initialized');
+    try {
+      const googleAuth = this.gapi.auth2.getAuthInstance();
+      const user = await googleAuth.signIn({prompt: 'select_account'});
+      return user.getBasicProfile().getEmail();
+    } catch (error) {
+      console.error('Error signing in:', error);
+      throw new Error(`Failed to sign in: ${error.message}`);
     }
-
-    return new Promise((resolve, reject) => {
-      try {
-        const savedToken = localStorage.getItem('gauth_token');
-        if (savedToken) {
-          const tokenData = JSON.parse(savedToken);
-          const now = Date.now();
-          
-          if (tokenData.expires_at > now) {
-            this.accessToken = tokenData.access_token;
-            this.gapi.client.setToken({
-              access_token: tokenData.access_token
-            });
-            resolve(tokenData);
-            return;
-          } else {
-            localStorage.removeItem('gauth_token');
-          }
-        }
-
-        this.tokenClient.callback = async (response) => {
-          if (response.error !== undefined) {
-            reject(response);
-          }
-          this.accessToken = response.access_token;
-          this.gapi.client.setToken(response);
-
-          localStorage.setItem('gauth_token', JSON.stringify({
-            access_token: response.access_token,
-            expires_at: Date.now() + (response.expires_in * 1000)
-          }));
-
-          resolve(response);
-        };
-        
-        this.tokenClient.requestAccessToken({ prompt: 'consent' });
-      } catch (err) {
-        console.error('Error signing in:', err);
-        reject(err);
-      }
-    });
   }
 
   async signOut() {
-    if (!this.isInitialized) {
-      throw new Error('Service not initialized');
-    }
-
     try {
-      const authInstance = this.gapi.auth2.getAuthInstance();
-      await authInstance.signOut();
-      this.accessToken = null;
-      localStorage.removeItem('gauth_token');
-      this.gapi.client.setToken(null);
+      const googleAuth = this.gapi.auth2.getAuthInstance();
+      await googleAuth.signOut();
     } catch (error) {
       console.error('Error signing out:', error);
-      throw error;
+      throw new Error(`Failed to sign out: ${error.message}`);
     }
   }
 
-  async checkEditAccess() {
-    try {
-      const response = await this.gapi.client.drive.files.get({
-        fileId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
-        fields: 'capabilities'
-      });
-
-      return response.result.capabilities.canEdit || false;
-    } catch (error) {
-      console.error('Error checking edit access:', error);
-      return false;
-    }
-  }
-
-  async loadOrders() {
-    try {
-      console.log('Loading orders from spreadsheet...');
-      const response = await this.gapi.client.sheets.spreadsheets.values.get({
-        spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
-        range: 'A2:L'
-      });
-
-      console.log('Raw response from sheets:', response);
-      const orders = this.parseOrdersData(response.result.values);
-      console.log('Parsed orders:', orders);
-      return orders;
-    } catch (error) {
-      console.error('Error loading orders:', error);
-      throw error;
-    }
-  }
-
-  parseOrdersData(rawData) {
-    if (!rawData) {
-      console.log('No raw data received');
-      return [];
-    }
-
-    console.log('Parsing raw data:', rawData);
-    
-    return rawData.map(row => {
-      let areaValue = 0;
-      if (row[4]) {
-        const normalizedArea = String(row[4]).replace(',', '.');
-        const parsedArea = Number(normalizedArea);
-        areaValue = !isNaN(parsedArea) ? parsedArea : 0;
-      }
-      
-      const order = {
-        orderDate: row[0],
-        orderNumber: row[1],
-        prisadkaNumber: row[2],
-        client: row[3],
-        area: areaValue,
-        millingType: row[5],
-        plannedDate: this.formatDate(row[6]),
-        status: row[7],
-        payment: row[8] ? row[8] : ' ', // Если значение пустое, ставим пробел
-        remainingPayment: row[9],
-        deliveryDate: row[10] ? this.formatDate(row[10]) : '',
-        phone: row[11]
-      };
-      console.log('Parsed order:', order);
-      return order;
-    });
-  }
-
-  async updateOrderStatus(rowIndex, status, deliveryDate) {
-    try {
-      await this.gapi.client.sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
-        resource: {
-          valueInputOption: 'USER_ENTERED',
-          data: [
-            {
-              range: `H${rowIndex + 2}`,
-              values: [[status]]
-            },
-            {
-              range: `K${rowIndex + 2}`,
-              values: [[deliveryDate]]
-            }
-          ]
-        }
-      });
-    } catch (error) {
-      console.error('Error updating order status:', error);
-      throw error;
-    }
-  }
-
-  async watchForChanges(callback) {
-    if (!this.isInitialized) {
-      throw new Error('Service not initialized');
-    }
-
-    const CHECK_INTERVAL = 3000; // 3 секунды между проверками
-    
-    const checkForChanges = async () => {
-      try {
-        const orders = await this.loadOrders();
-        callback(orders);
-      } catch (error) {
-        console.error('Error watching for changes:', error);
-      }
-    };
-
-    await checkForChanges();
-
-    const intervalId = setInterval(checkForChanges, CHECK_INTERVAL);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }
-
-  async updatePlannedDate(rowIndex, newDate) {
-    try {
-      await this.gapi.client.sheets.spreadsheets.values.update({
-        spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
-        range: `G${rowIndex + 2}`,
-        valueInputOption: 'USER_ENTERED',
-        resource: {
-          values: [[newDate]]
-        }
-      });
-    } catch (error) {
-      console.error('Error updating planned date:', error);
-      throw error;
-    }
-  }
-
-  isAuthenticated() {
-    return !!this.accessToken;
+  isSignedIn() {
+    return this.gapi && this.gapi.auth2.getAuthInstance().isSignedIn.get();
   }
 
   formatDate(dateStr) {
     if (!dateStr) return '';
     
-    const formats = [
-      /^(\d{2})\/(\d{2})\/(\d{2})$/,
-      /^(\d{2})\.(\d{2})\.(\d{4})$/,
-      /^(\d{4})-(\d{2})-(\d{2})$/
-    ];
-
-    for (let format of formats) {
-      const match = dateStr.match(format);
-      if (match) {
-        const [_, part1, part2, part3] = match;
-        if (format === formats[0]) { // DD/MM/YY
-          return `${part1}.${part2}.20${part3}`;
-        } else if (format === formats[1]) { // DD.MM.YYYY
-          return dateStr;
-        } else { // YYYY-MM-DD
-          return `${part3}.${part2}.${part1}`;
-        }
-      }
+    try {
+      const date = parse(dateStr, 'dd.MM.yyyy', new Date());
+      return format(date, 'dd.MM.yyyy');
+    } catch (error) {
+      console.warn('Unexpected date format:', dateStr);
+      return dateStr;
     }
-
-    console.warn('Unexpected date format:', dateStr);
-    return dateStr;
   }
 
   getTotalArea(orders) {
@@ -374,6 +126,103 @@ class GoogleSheetsService {
     } catch (error) {
       console.error('Error updating order status:', error);
       throw new Error('Ошибка при обновлении статуса заказа');
+    }
+  }
+
+  async checkEditAccess() {
+    try {
+      const response = await this.gapi.client.drive.files.get({
+        fileId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
+        fields: 'capabilities'
+      });
+
+      return response.result.capabilities.canEdit || false;
+    } catch (error) {
+      console.error('Error checking edit access:', error);
+      return false;
+    }
+  }
+
+  async loadOrders() {
+    try {
+      console.log('Loading orders from spreadsheet...');
+      const response = await this.gapi.client.sheets.spreadsheets.values.get({
+        spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
+        range: 'A2:L'
+      });
+
+      console.log('Raw response from sheets:', response);
+      this.orders = this.parseOrdersData(response.result.values);
+      console.log('Parsed orders:', this.orders);
+      return this.orders;
+    } catch (error) {
+      console.error('Error loading orders:', error);
+      throw error;
+    }
+  }
+
+  parseOrdersData(rawData) {
+    if (!rawData) {
+      console.log('No raw data received');
+      return [];
+    }
+
+    console.log('Parsing raw data:', rawData);
+    
+    return rawData.map(row => {
+      let areaValue = 0;
+      if (row[4]) {
+        const normalizedArea = String(row[4]).replace(',', '.');
+        const parsedArea = Number(normalizedArea);
+        areaValue = !isNaN(parsedArea) ? parsedArea : 0;
+      }
+      
+      return {
+        orderDate: row[0],
+        orderNumber: row[1],
+        prisadkaNumber: row[2],
+        client: row[3],
+        area: areaValue,
+        millingType: row[5],
+        plannedDate: this.formatDate(row[6]),
+        status: row[7],
+        payment: row[8] ? row[8] : ' ',
+        remainingPayment: row[9],
+        deliveryDate: row[10] ? this.formatDate(row[10]) : '',
+        phone: row[11]
+      };
+    });
+  }
+
+  async updatePlannedDate(rowIndex, newDate) {
+    try {
+      await this.gapi.client.sheets.spreadsheets.values.update({
+        spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
+        range: `G${rowIndex + 2}`,
+        valueInputOption: 'USER_ENTERED',
+        resource: {
+          values: [[newDate]]
+        }
+      });
+    } catch (error) {
+      console.error('Error updating planned date:', error);
+      throw error;
+    }
+  }
+
+  async updateOrderStatus(rowIndex, newStatus, deliveryDate = '') {
+    try {
+      await this.gapi.client.sheets.spreadsheets.values.update({
+        spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
+        range: `H${rowIndex + 2}:K${rowIndex + 2}`,
+        valueInputOption: 'USER_ENTERED',
+        resource: {
+          values: [[newStatus, '', '', deliveryDate]]
+        }
+      });
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      throw error;
     }
   }
 }

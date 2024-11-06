@@ -1,131 +1,120 @@
 import React, { useState, useEffect } from 'react';
-import { addDays, subDays, isSunday, max } from 'date-fns';
 import LoginPage from './components/LoginPage';
 import OrderDistributionTable from './components/OrderDistributionTable';
 import { googleSheetsService } from './services/googleSheetsService';
-import './App.css';
 
-export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+function App() {
+  const [isSignedIn, setIsSignedIn] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
   const [orders, setOrders] = useState([]);
-  const [days, setDays] = useState([]);
-  const [ordersMap, setOrdersMap] = useState({});
-  const [error, setError] = useState(null);
   const [hasEditAccess, setHasEditAccess] = useState(false);
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      loadOrders();
-      checkEditAccess();
-    }
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    if (orders.length > 0) {
-      initializeDays();
-      updateOrdersMap();
-    }
-  }, [orders]);
-
-  const initializeDays = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const startDate = subDays(today, 5);
-    
-    const maxPlannedDate = orders.reduce((maxDate, order) => {
-      if (!order.plannedDate) return maxDate;
-      const plannedDate = new Date(order.plannedDate.split('.').reverse().join('-'));
-      return max([maxDate, plannedDate]);
-    }, today);
-    
-    const endDate = addDays(maxPlannedDate, 1);
-    
-    const newDays = [];
-    let currentDate = startDate;
-    
-    while (currentDate <= endDate) {
-      if (!isSunday(currentDate)) {
-        newDays.push(new Date(currentDate));
+    const initializeApp = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        console.log('Initializing app...');
+        await googleSheetsService.init();
+        console.log('Google API initialized successfully');
+        if (googleSheetsService.isSignedIn()) {
+          console.log('User is already signed in');
+          await handleSignInSuccess();
+        }
+      } catch (error) {
+        console.error('Error initializing app:', error);
+        setError(`Ошибка инициализации приложения: ${error.message}`);
+      } finally {
+        setIsLoading(false);
       }
-      currentDate = addDays(currentDate, 1);
-    }
-    
-    setDays(newDays);
-  };
+    };
 
-  const updateOrdersMap = () => {
-    const groupedOrders = orders.reduce((acc, order) => {
-      const date = order.plannedDate;
-      if (!acc[date]) {
-        acc[date] = [];
-      }
-      acc[date].push(order);
-      return acc;
-    }, {});
-    setOrdersMap(groupedOrders);
-  };
+    initializeApp();
+  }, []);
 
-  const loadOrders = async () => {
+  const handleSignInSuccess = async () => {
     try {
-      const loadedOrders = await googleSheetsService.loadOrders();
-      setOrders(loadedOrders);
-      // initializeDays and updateOrdersMap will be called automatically due to the useEffect
+      console.log('Handling sign in success...');
+      const email = await googleSheetsService.signIn();
+      setUserEmail(email);
+      setIsSignedIn(true);
+      const orders = await googleSheetsService.loadOrders();
+      setOrders(orders);
+      const editAccess = await googleSheetsService.checkEditAccess();
+      setHasEditAccess(editAccess);
     } catch (error) {
-      console.error('Error loading orders:', error);
-      setError('Ошибка при загрузке заказов');
+      console.error('Error during sign in:', error);
+      setError(`Ошибка при входе в систему: ${error.message}`);
+      setIsSignedIn(false);
     }
   };
 
-  const checkEditAccess = async () => {
+  const handleSignOut = async () => {
     try {
-      const hasAccess = await googleSheetsService.checkEditAccess();
-      setHasEditAccess(hasAccess);
+      await googleSheetsService.signOut();
+      setIsSignedIn(false);
+      setUserEmail('');
+      setOrders([]);
+      setHasEditAccess(false);
     } catch (error) {
-      console.error('Error checking edit access:', error);
-      setError('Ошибка при проверке прав доступа');
+      console.error('Error during sign out:', error);
+      setError(`Ошибка при выходе из системы: ${error.message}`);
     }
   };
 
-  const handleOrderMove = async (order, sourceDate, targetDate) => {
-    try {
-      const updatedOrders = await googleSheetsService.handleOrderMove(order, sourceDate, targetDate);
-      setOrders(updatedOrders);
-    } catch (error) {
-      setError(error.message);
-    }
-  };
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-screen">Загрузка...</div>;
+  }
 
-  const handleCheckboxChange = async (order, isChecked) => {
-    try {
-      const updatedOrders = await googleSheetsService.handleCheckboxChange(order, isChecked);
-      setOrders(updatedOrders);
-    } catch (error) {
-      setError(error.message);
-    }
-  };
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen">
+        <div className="text-red-500 p-4 mb-4">{error}</div>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+        >
+          Попробовать снова
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {!isAuthenticated ? (
-        <LoginPage onLogin={() => setIsAuthenticated(true)} />
+    <div className="App">
+      {!isSignedIn ? (
+        <LoginPage onSignIn={handleSignInSuccess} />
       ) : (
-        <OrderDistributionTable
-          days={days}
-          setDays={setDays}
-          ordersMap={ordersMap}
-          onOrderMove={handleOrderMove}
-          hasEditAccess={hasEditAccess}
-          handleCheckboxChange={handleCheckboxChange}
-          getTotalArea={googleSheetsService.getTotalArea.bind(googleSheetsService)}
-          getCellWidth={googleSheetsService.getCellWidth.bind(googleSheetsService)}
-          orders={orders}
-          setOrders={setOrders}
-          googleSheetsService={googleSheetsService}
-          setError={setError}
-        />
+        <>
+          <header className="bg-gray-800 text-white p-4">
+            <div className="container mx-auto flex justify-between items-center">
+              <h1 className="text-2xl font-bold">Планирование производства</h1>
+              <div>
+                <span className="mr-4">{userEmail}</span>
+                <button
+                  onClick={handleSignOut}
+                  className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                >
+                  Выйти
+                </button>
+              </div>
+            </div>
+          </header>
+          <main className="container mx-auto mt-8">
+            <OrderDistributionTable
+              orders={orders}
+              setOrders={setOrders}
+              hasEditAccess={hasEditAccess}
+              googleSheetsService={googleSheetsService}
+              setError={setError}
+            />
+          </main>
+        </>
       )}
-      {error && <div className="error-message">{error}</div>}
     </div>
   );
 }
+
+export default App;
