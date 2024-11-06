@@ -295,12 +295,15 @@ class GoogleSheetsService {
 
   async updatePlannedDate(rowIndex, newDate) {
     try {
+      // Форматируем дату перед отправкой
+      const formattedDate = this.formatDate(newDate);
+      
       await this.gapi.client.sheets.spreadsheets.values.update({
         spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
         range: `G${rowIndex + 2}`,
         valueInputOption: 'USER_ENTERED',
         resource: {
-          values: [[newDate]]
+          values: [[formattedDate]] // Используем отформатированную дату
         }
       });
     } catch (error) {
@@ -316,6 +319,16 @@ class GoogleSheetsService {
   formatDate(dateStr) {
     if (!dateStr) return '';
     
+    // Если это объект Date или ISO строка
+    if (dateStr instanceof Date || dateStr.includes('T')) {
+      const date = new Date(dateStr);
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}.${month}.${year}`;
+    }
+    
+    // Существующая логика для других форматов
     const formats = [
       /^(\d{2})\/(\d{2})\/(\d{2})$/,
       /^(\d{2})\.(\d{2})\.(\d{4})$/,
