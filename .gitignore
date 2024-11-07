@@ -32,6 +32,8 @@ instructions.txt
 OLD_*
 .cursorrules
 
+# docker
+docker.env
 # Logs
 logs
 *.log

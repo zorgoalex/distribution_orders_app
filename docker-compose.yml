@@ -1,0 +1,25 @@
+version: '3'
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        REACT_APP_GOOGLE_API_KEY: ${REACT_APP_GOOGLE_API_KEY}
+        REACT_APP_GOOGLE_CLIENT_ID: ${REACT_APP_GOOGLE_CLIENT_ID}
+        REACT_APP_SPREADSHEET_ID: ${REACT_APP_SPREADSHEET_ID}
+    ports:
+      - "0.0.0.0:3001:3001"  # Явно указываем привязку ко всем интерфейсам
+    environment:
+      - REACT_APP_GOOGLE_API_KEY=${REACT_APP_GOOGLE_API_KEY}
+      - REACT_APP_GOOGLE_CLIENT_ID=${REACT_APP_GOOGLE_CLIENT_ID}
+      - REACT_APP_SPREADSHEET_ID=${REACT_APP_SPREADSHEET_ID}
+    env_file:
+      - docker.env
+    networks:
+      - app-network
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
