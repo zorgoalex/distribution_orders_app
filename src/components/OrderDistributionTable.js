@@ -24,16 +24,27 @@ const OrderDistributionTable = ({
 
   const executeOrderMove = async (order, sourceDate, targetDate, updateDeliveryDate = false) => {
     try {
+      console.log('executeOrderMove - START', {
+        orderNumber: order.orderNumber,
+        sourceDate,
+        targetDate,
+        updateDeliveryDate
+      });
+
       const rowIndex = orders.findIndex(o => o.orderNumber === order.orderNumber);
+      console.log('Found row index:', rowIndex);
       
       await googleSheetsService.updatePlannedDate(rowIndex, targetDate);
+      console.log('Updated planned date');
       
       if (updateDeliveryDate) {
+        console.log('Updating delivery date');
         await googleSheetsService.updateOrderStatus(rowIndex, order.status, targetDate);
       }
       
       const updatedOrders = await googleSheetsService.loadOrders();
       setOrders(updatedOrders);
+      console.log('executeOrderMove - END');
     } catch (error) {
       console.error('Error executing order move:', error);
       setError('Ошибка при обновлении заказа');
@@ -42,7 +53,15 @@ const OrderDistributionTable = ({
 
   const handleOrderMove = async (order, sourceDate, targetDate) => {
     try {
-      if (order.status === 'выдан') {
+      console.log('Moving order:', {
+        orderNumber: order.orderNumber,
+        status: order.status,
+        sourceDate,
+        targetDate
+      });
+
+      if (order.status?.toLowerCase() === 'выдан') {
+        console.log('Order is issued, showing modal');
         setPendingMove({
           order,
           sourceDate,
@@ -51,6 +70,7 @@ const OrderDistributionTable = ({
         });
         setIsModalOpen(true);
       } else {
+        console.log('Order is not issued, moving directly');
         await executeOrderMove(order, sourceDate, targetDate);
       }
     } catch (error) {
@@ -60,21 +80,27 @@ const OrderDistributionTable = ({
   };
 
   const handleModalConfirm = async () => {
+    console.log('Modal confirmed - START');
     if (pendingMove) {
+      console.log('PendingMove data:', pendingMove);
       const { order, sourceDate, targetDate } = pendingMove;
       await executeOrderMove(order, sourceDate, targetDate, true);
     }
     setIsModalOpen(false);
     setPendingMove(null);
+    console.log('Modal confirmed - END');
   };
 
   const handleModalClose = async () => {
+    console.log('Modal closed - START');
     if (pendingMove) {
+      console.log('PendingMove data:', pendingMove);
       const { order, sourceDate, targetDate } = pendingMove;
       await executeOrderMove(order, sourceDate, targetDate, false);
     }
     setIsModalOpen(false);
     setPendingMove(null);
+    console.log('Modal closed - END');
   };
 
   const handleDragOver = (e) => {
@@ -198,7 +224,7 @@ const OrderDistributionTable = ({
                   {dayOrders.length > 0 && (
                     <>
                       <span className="font-normal"> - </span>
-                      <span className="font-bold text-amber-700">{getTotalArea(dayOrders)} кв.м.</span>
+                      <span className="font-bold text-amber-700">{getTotalArea(dayOrders)} кв.��.</span>
                     </>
                   )}
                 </div>
@@ -266,7 +292,7 @@ const OrderDistributionTable = ({
 
       <ConfirmationModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={handleModalClose}
         onConfirm={handleModalConfirm}
         message="Обновить дату выдачи заказа?"
       />
