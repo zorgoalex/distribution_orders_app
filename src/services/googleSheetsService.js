@@ -381,11 +381,11 @@ class GoogleSheetsService {
       console.log('Updating order:', {
         orderNumber: order.orderNumber,
         rowIndex,
-        newStatus: isChecked ? 'выдан' : 'готов',
+        newStatus: isChecked ? 'Выдан' : 'Готов',
         issueDate
       });
 
-      await this.updateOrderStatus(rowIndex, isChecked ? 'выдан' : 'готов', issueDate);
+      await this.updateOrderStatus(rowIndex, isChecked ? 'Выдан' : 'Готов', issueDate);
       return await this.loadOrders();
     } catch (error) {
       console.error('Error in handleCheckboxChange:', error);

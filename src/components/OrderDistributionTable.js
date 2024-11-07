@@ -245,7 +245,7 @@ const OrderDistributionTable = ({
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={order.status === 'выдан'}
+                          checked={order.status?.toLowerCase() === 'выдан'}
                           onChange={(e) => handleCheckboxChange(order, e.target.checked)}
                           disabled={!hasEditAccess}
                           className="form-checkbox"
