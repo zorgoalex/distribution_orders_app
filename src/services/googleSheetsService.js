@@ -351,9 +351,12 @@ class GoogleSheetsService {
   async handleOrderMove(order, sourceDate, targetDate, updateDeliveryDate = false) {
     try {
       const rowIndex = this.orders.findIndex(o => o.orderNumber === order.orderNumber);
+      
+      // Всегда обновляем планируемую дату
       await this.updatePlannedDate(rowIndex, targetDate);
       
-      if (updateDeliveryDate) {
+      // Обновляем дату выдачи только если это запрошено И заказ имеет статус "выдан"
+      if (updateDeliveryDate && order.status === 'выдан') {
         await this.updateOrderStatus(rowIndex, order.status, targetDate);
       }
       

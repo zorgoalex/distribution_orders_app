@@ -42,9 +42,7 @@ const OrderDistributionTable = ({
 
   const handleOrderMove = async (order, sourceDate, targetDate) => {
     try {
-      const isCompleted = order.status === 'готов' || order.status === 'выдан';
-
-      if (isCompleted) {
+      if (order.status === 'выдан') {
         setPendingMove({
           order,
           sourceDate,
@@ -118,6 +116,18 @@ const OrderDistributionTable = ({
       number: order.orderNumber,
       status: order.status
     })));
+  }, [orders]);
+
+  useEffect(() => {
+    if (pendingMove) {
+      const updatedOrder = orders.find(o => o.orderNumber === pendingMove.order.orderNumber);
+      if (updatedOrder) {
+        setPendingMove(prev => ({
+          ...prev,
+          order: updatedOrder
+        }));
+      }
+    }
   }, [orders]);
 
   return (
