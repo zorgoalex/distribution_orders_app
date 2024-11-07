@@ -17,6 +17,22 @@ export default function App() {
     if (isAuthenticated) {
       loadOrders();
       checkEditAccess();
+      
+      let unsubscribe;
+      const startWatching = async () => {
+        unsubscribe = await googleSheetsService.watchForChanges((updatedOrders) => {
+          console.log('Changes detected, updating orders');
+          setOrders(updatedOrders);
+        });
+      };
+      
+      startWatching();
+      
+      return () => {
+        if (unsubscribe) {
+          unsubscribe();
+        }
+      };
     }
   }, [isAuthenticated]);
 
