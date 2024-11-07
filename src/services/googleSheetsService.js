@@ -234,13 +234,11 @@ class GoogleSheetsService {
         values: [[newStatus]]
       });
       
-      // Если есть дата выдачи, обновляем её
-      if (deliveryDate) {
-        updates.push({
-          range: `${GOOGLE_SHEETS_CONFIG.COLUMNS.DELIVERY_DATE}${rowIndex + 2}`,
-          values: [[this.formatDate(deliveryDate)]]
-        });
-      }
+      // Всегда обновляем дату выдачи (пустая строка, если deliveryDate null)
+      updates.push({
+        range: `${GOOGLE_SHEETS_CONFIG.COLUMNS.DELIVERY_DATE}${rowIndex + 2}`,
+        values: [[deliveryDate ? this.formatDate(deliveryDate) : '']]
+      });
       
       // Выполняем batch update
       await this.gapi.client.sheets.spreadsheets.values.batchUpdate({
@@ -366,7 +364,7 @@ class GoogleSheetsService {
     }
   }
 
-  async handleCheckboxChange(order, isChecked) {
+  async handleCheckboxChange(order, isChecked, issueDate) {
     try {
       if (!this.orders || !this.orders.length) {
         throw new Error('Orders not loaded');
@@ -380,10 +378,11 @@ class GoogleSheetsService {
       console.log('Updating order:', {
         orderNumber: order.orderNumber,
         rowIndex,
-        newStatus: isChecked ? 'выдан' : 'готов'
+        newStatus: isChecked ? 'выдан' : 'готов',
+        issueDate
       });
 
-      await this.updateOrderStatus(rowIndex, isChecked ? 'выдан' : 'готов');
+      await this.updateOrderStatus(rowIndex, isChecked ? 'выдан' : 'готов', issueDate);
       return await this.loadOrders();
     } catch (error) {
       console.error('Error in handleCheckboxChange:', error);
