@@ -108,7 +108,8 @@ export default function App() {
 
   const handleCheckboxChange = async (order, isChecked) => {
     try {
-      const updatedOrders = await googleSheetsService.handleCheckboxChange(order, isChecked);
+      const issueDate = isChecked ? order.plannedDate : null;
+      const updatedOrders = await googleSheetsService.handleCheckboxChange(order, isChecked, issueDate);
       setOrders(updatedOrders);
     } catch (error) {
       setError(error.message);
