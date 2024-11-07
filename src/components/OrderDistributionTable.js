@@ -224,7 +224,7 @@ const OrderDistributionTable = ({
                   {dayOrders.length > 0 && (
                     <>
                       <span className="font-normal"> - </span>
-                      <span className="font-bold text-amber-700">{getTotalArea(dayOrders)} кв.��.</span>
+                      <span className="font-bold text-amber-700">{getTotalArea(dayOrders)} кв.м.</span>
                     </>
                   )}
                 </div>
