@@ -256,7 +256,7 @@ const OrderDistributionTable = ({
                             <span className="font-bold text-red-600 text-base">{`-${order.prisadkaNumber}`}</span>
                           )}
                           <span className="text-xs">
-                            {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area)}кв.м.`}
+                            {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.`}
                           </span>
                         </span>
                       </label>
