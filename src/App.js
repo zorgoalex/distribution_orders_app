@@ -51,20 +51,18 @@ export default function App() {
     
     const maxPlannedDate = orders.reduce((maxDate, order) => {
       if (!order.plannedDate) return maxDate;
-      const plannedDate = new Date(order.plannedDate.split('.').reverse().join('-'));
-      return max([maxDate, plannedDate]);
+      
+      const [day, month, year] = order.plannedDate.split('.');
+      const plannedDate = new Date(year, month - 1, day);
+      plannedDate.setHours(0, 0, 0, 0);
+      
+      return plannedDate > maxDate ? plannedDate : maxDate;
     }, today);
     
     let endDate = addDays(maxPlannedDate, 1);
     while (isSunday(endDate)) {
       endDate = addDays(endDate, 1);
     }
-    
-    console.log('Date range:', {
-      start: startDate.toLocaleDateString(),
-      maxPlanned: maxPlannedDate.toLocaleDateString(),
-      end: endDate.toLocaleDateString()
-    });
     
     const newDays = [];
     let currentDate = startDate;
@@ -76,7 +74,6 @@ export default function App() {
       currentDate = addDays(currentDate, 1);
     }
     
-    console.log('Generated days:', newDays.map(d => d.toLocaleDateString()));
     setDays(newDays);
   };
 
