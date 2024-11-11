@@ -201,20 +201,27 @@ class GoogleSheetsService {
       });
 
       console.log('Raw response from sheets:', response);
-      const orders = response.result.values.map(row => ({
-        orderDate: row[0] || '',
-        orderNumber: row[1] || '',
-        prisadkaNumber: row[2] || '',
-        client: row[3] || '',
-        area: row[4] || '',
-        millingType: row[5] || '',
-        plannedDate: row[6] || '',
-        status: row[7] || '',
-        payment: row[8] || '',
-        remainingPayment: row[9] || '',
-        deliveryDate: row[10] || '',
-        phone: row[11] || ''
-      }));
+      const orders = response.result.values.map(row => {
+        // Форматируем даты при загрузке
+        const orderDate = this.formatDate(row[0] || '');
+        const plannedDate = this.formatDate(row[6] || '');
+        const deliveryDate = this.formatDate(row[10] || '');
+
+        return {
+          orderDate,
+          orderNumber: row[1] || '',
+          prisadkaNumber: row[2] || '',
+          client: row[3] || '',
+          area: row[4] || '',
+          millingType: row[5] || '',
+          plannedDate,
+          status: row[7] || '',
+          payment: row[8] || '',
+          remainingPayment: row[9] || '',
+          deliveryDate,
+          phone: row[11] || ''
+        };
+      });
 
       this.orders = orders;
       return orders;
@@ -314,27 +321,29 @@ class GoogleSheetsService {
       return `${day}.${month}.${year}`;
     }
     
-    // Существующая логика для других форматов
+    // Обработка различных форматов даты
     const formats = [
-      /^(\d{2})\/(\d{2})\/(\d{2})$/,
-      /^(\d{2})\.(\d{2})\.(\d{4})$/,
-      /^(\d{4})-(\d{2})-(\d{2})$/
+      /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
+      /^(\d{2})\.(\d{2})\.(\d{4})$/, // DD.MM.YYYY
+      /^(\d{4})-(\d{2})-(\d{2})$/    // YYYY-MM-DD
     ];
 
     for (let format of formats) {
       const match = dateStr.match(format);
       if (match) {
         const [_, part1, part2, part3] = match;
-        if (format === formats[0]) { // DD/MM/YY
-          return `${part1}.${part2}.20${part3}`;
-        } else if (format === formats[1]) { // DD.MM.YYYY
+        // Всегда возвращаем в формате DD.MM.YYYY
+        if (format === formats[0]) { // из DD/MM/YYYY
+          return `${part1}.${part2}.${part3}`;
+        } else if (format === formats[1]) { // уже в DD.MM.YYYY
           return dateStr;
-        } else { // YYYY-MM-DD
+        } else { // из YYYY-MM-DD
           return `${part3}.${part2}.${part1}`;
         }
       }
     }
 
+    // Если формат не распознан, логируем предупреждение и возвращаем исходную строку
     console.warn('Unexpected date format:', dateStr);
     return dateStr;
   }
