@@ -264,9 +264,9 @@ const OrderDistributionTable = ({
                           className="form-checkbox"
                         />
                         <span>
-                          <span className="font-bold text-blue-600 text-base">{order.orderNumber}</span>
+                          <span className="font-bold text-blue-600 text-xl">{order.orderNumber}</span>
                           {order.prisadkaNumber && (
-                            <span className="font-bold text-red-600 text-base">{`-${order.prisadkaNumber}`}</span>
+                            <span className="font-bold text-red-600 text-xl">{`-${order.prisadkaNumber}`}</span>
                           )}
                           <span className="text-xs">
                             {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.`}
