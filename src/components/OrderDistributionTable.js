@@ -211,7 +211,7 @@ const OrderDistributionTable = ({
                 dayOrders.length 
                   ? allCompleted
                     ? 'border-green-50'
-                    : 'border-blue-500'
+                    : 'border-amber-200'
                   : 'border-gray-200'
               }`}
               onDragOver={handleDragOver}
@@ -224,7 +224,20 @@ const OrderDistributionTable = ({
                   {dayOrders.length > 0 && (
                     <>
                       <span className="font-normal"> - </span>
-                      <span className="font-bold text-amber-700">{getTotalArea(dayOrders)} кв.м.</span>
+                      <span className="font-bold text-amber-700">
+                        {(() => {
+                          const rawTotal = getTotalArea(dayOrders);
+                          console.log('Raw total:', rawTotal);
+                          
+                          const number = parseFloat(rawTotal);
+                          console.log('Parsed number:', number);
+                          
+                          const formatted = number.toFixed(2);
+                          console.log('Formatted:', formatted);
+                          
+                          return formatted;
+                        })()} кв.м.
+                      </span>
                     </>
                   )}
                 </div>

@@ -350,7 +350,13 @@ class GoogleSheetsService {
 
   getTotalArea(orders) {
     if (!orders || !Array.isArray(orders)) return '0.00';
-    return orders.reduce((sum, order) => sum + parseFloat(order.area || 0), 0).toFixed(2);
+    const total = orders.reduce((sum, order) => {
+        const area = parseFloat(order.area?.replace(',', '.') || 0);
+        console.log('Order area:', order.area, 'Parsed:', area);
+        return sum + area;
+    }, 0);
+    console.log('Total before formatting:', total);
+    return total.toFixed(2);
   }
 
   getCellWidth() {

@@ -2,14 +2,6 @@ export const GOOGLE_SHEETS_CONFIG = {
   API_KEY: process.env.REACT_APP_GOOGLE_API_KEY,
   CLIENT_ID: process.env.REACT_APP_GOOGLE_CLIENT_ID,
   SPREADSHEET_ID: process.env.REACT_APP_SPREADSHEET_ID,
-  /* SPREADSHEET_ID: (() => {
-    const id = process.env.REACT_APP_SPREADSHEET_ID;
-    if (!id) {
-      console.error('SPREADSHEET_ID is not defined!');
-    }
-    console.log('Using spreadsheet ID:', id);
-    return id; 
-  })(),*/
   SCOPES: [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.readonly'
