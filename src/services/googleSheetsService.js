@@ -197,12 +197,11 @@ class GoogleSheetsService {
       console.log('Loading orders from spreadsheet...');
       const response = await this.gapi.client.sheets.spreadsheets.values.get({
         spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
-        range: 'A2:L'
+        range: 'A2:N'
       });
 
       console.log('Raw response from sheets:', response);
       const orders = response.result.values.map(row => {
-        // Форматируем даты при загрузке
         const orderDate = this.formatDate(row[0] || '');
         const plannedDate = this.formatDate(row[6] || '');
         const deliveryDate = this.formatDate(row[10] || '');
@@ -219,7 +218,9 @@ class GoogleSheetsService {
           payment: row[8] || '',
           remainingPayment: row[9] || '',
           deliveryDate,
-          phone: row[11] || ''
+          phone: row[11] || '',
+          cadFiles: row[12] || '',
+          material: row[13] || ''
         };
       });
 

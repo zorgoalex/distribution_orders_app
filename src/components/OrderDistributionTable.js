@@ -249,11 +249,20 @@ const OrderDistributionTable = ({
                     key={order.orderNumber}
                     draggable={hasEditAccess}
                     onDragStart={(e) => handleDragStart(e, order, formattedDate)}
-                    className={`p-2 rounded 
-                      ${order.status?.toLowerCase() === 'готов' ? 'border-2 border-green-500' : 'border border-gray-200'} 
+                    className={`p-2 rounded relative ${order.status?.toLowerCase() === 'готов' ? 'border-2 border-green-500' : 'border border-gray-200'} 
                       ${order.status?.toLowerCase() === 'выдан' ? 'bg-green-50' : 'bg-white'} 
                       ${!hasEditAccess ? 'cursor-default' : 'cursor-move'}`}
                   >
+                    {order.material && order.material !== '16мм' && (
+                      <span className={`absolute top-1 right-2 italic px-1 rounded ${
+                        order.material === '18мм' ? 'text-red-600 bg-amber-100' :
+                        order.material === '10мм' ? 'text-blue-600 bg-blue-100' :
+                        order.material === 'ЛДСП' ? 'text-purple-600 bg-purple-100' :
+                        'text-red-600 bg-amber-100'
+                      }`} style={{ fontSize: '14px' }}>
+                        {order.material}
+                      </span>
+                    )}
                     <div className="flex flex-col gap-1">
                       <label className="flex items-center gap-2">
                         <input
@@ -263,15 +272,17 @@ const OrderDistributionTable = ({
                           disabled={!hasEditAccess}
                           className="form-checkbox"
                         />
-                        <span>
-                          <span className="font-bold text-blue-600 text-xl">{order.orderNumber}</span>
-                          {order.prisadkaNumber && (
-                            <span className="font-bold text-red-600 text-xl">{`-${order.prisadkaNumber}`}</span>
-                          )}
-                          <span className="text-xs">
-                            {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.`}
+                        <div className={`${scale === 'default' ? '' : 'pt-6'}`}>
+                          <span>
+                            <span className="font-bold text-blue-600 text-xl">{order.orderNumber}</span>
+                            {order.prisadkaNumber && (
+                              <span className="font-bold text-red-600 text-xl">{`-${order.prisadkaNumber}`}</span>
+                            )}
                           </span>
-                        </span>
+                          <div className="text-xs">
+                            {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.`}
+                          </div>
+                        </div>
                       </label>
                       <div className="text-xs text-gray-500 pl-6">
                         {`${order.orderDate} • ${order.client} • `}

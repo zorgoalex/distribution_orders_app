@@ -18,11 +18,15 @@ export const GOOGLE_SHEETS_CONFIG = {
     PAYMENT: 'I',
     REMAINING_PAYMENT: 'J',
     DELIVERY_DATE: 'K',
-    PHONE: 'L'
+    PHONE: 'L',
+    CAD_FILES: 'M',
+    MATERIAL: 'N'
   },
   VALID_VALUES: {
     STATUS: ['готов', 'выдан'],
     PAYMENT: ['не оплачен', 'в долг', 'частично', 'оплачен'],
-    MILLING_TYPE: ['модерн', 'фрезеровка', 'черновой']
+    MILLING_TYPE: ['модерн', 'фрезеровка', 'черновой'],
+    CAD_FILES: ['_', 'отрисован'],
+    MATERIAL: ['16мм', '18мм', '10мм', 'ЛДСП']
   }
 };
