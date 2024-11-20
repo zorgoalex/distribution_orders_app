@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { formatDate, getDayName } from '../utils/dateUtils';
 import ConfirmationModal from './ConfirmationModal';
-import { Plus, Minus, Table, Columns, PencilIcon } from 'lucide-react';
+import { Plus, Minus, Table, Columns, PencilIcon, LayoutList, LayoutGrid, Coins } from 'lucide-react';
 
 const OrderDistributionTable = ({ 
   days,
@@ -22,6 +22,7 @@ const OrderDistributionTable = ({
   const [scale, setScale] = useState('default'); // 'default', 'medium', 'large', 'full'
   const [view, setView] = useState('table'); // 'table', 'kanban'
   const [userInfo, setUserInfo] = useState(null);
+  const [cardView, setCardView] = useState('default'); // 'default' или 'compact'
 
   const executeOrderMove = async (order, sourceDate, targetDate, updateDeliveryDate = false) => {
     try {
@@ -196,6 +197,16 @@ const OrderDistributionTable = ({
             >
               <Plus className="w-6 h-6" />
             </button>
+            <div className="border-l border-gray-200 mx-2" />
+            <button
+              className="p-2 border rounded hover:bg-gray-100"
+              onClick={() => setCardView(prev => prev === 'default' ? 'compact' : 'default')}
+            >
+              {cardView === 'default' ? 
+                <LayoutList className="w-6 h-6" /> : 
+                <LayoutGrid className="w-6 h-6" />
+              }
+            </button>
           </div>
 
           <div className="flex items-center gap-4">
@@ -266,10 +277,59 @@ const OrderDistributionTable = ({
                       key={order.orderNumber}
                       draggable={hasEditAccess}
                       onDragStart={(e) => handleDragStart(e, order, formattedDate)}
-                      className={`p-2 rounded relative ${order.status?.toLowerCase() === 'готов' ? 'border-2 border-green-500' : 'border border-gray-200'} 
-                        ${order.status?.toLowerCase() === 'выдан' ? 'bg-green-50' : 'bg-white'} 
-                        ${!hasEditAccess ? 'cursor-default' : 'cursor-move'}`}
+                      className={`p-2 pb-4 rounded relative ${
+                        order.status?.toLowerCase() === 'готов' ? 'border-2 border-green-500' : 'border border-gray-200'
+                      } ${order.status?.toLowerCase() === 'выдан' ? 'bg-green-50' : 'bg-white'} 
+                      ${!hasEditAccess ? 'cursor-default' : 'cursor-move'} min-h-[60px]`}
                     >
+                      {cardView === 'default' ? (
+                        <div className="flex flex-col gap-1">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={order.status?.toLowerCase() === 'выдан'}
+                              onChange={(e) => handleCheckboxChange(order, e.target.checked)}
+                              disabled={!hasEditAccess}
+                              className="form-checkbox"
+                            />
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-blue-600 text-xl">
+                                {order.orderNumber}
+                                {order.prisadkaNumber && (
+                                  <span className="font-bold text-red-600">{`-${order.prisadkaNumber}`}</span>
+                                )}
+                              </span>
+                              <span className="text-sm">
+                                {order.millingType ? order.millingType.charAt(0).toUpperCase() : ''} - {parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={order.status?.toLowerCase() === 'выдан'}
+                              onChange={(e) => handleCheckboxChange(order, e.target.checked)}
+                              disabled={!hasEditAccess}
+                              className="form-checkbox"
+                            />
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-blue-600 text-xl">
+                                {order.orderNumber}
+                                {order.prisadkaNumber && (
+                                  <span className="font-bold text-red-600">{`-${order.prisadkaNumber}`}</span>
+                                )}
+                              </span>
+                              <span className="text-sm">
+                                {order.millingType ? order.millingType.charAt(0).toUpperCase() : ''} - {parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      )}
+                      
                       {order.material && order.material !== '16мм' && (
                         <span className={`absolute top-1 right-2 italic px-1 rounded ${
                           order.material === '18мм' ? 'text-red-600 bg-amber-100' :
@@ -294,49 +354,16 @@ const OrderDistributionTable = ({
                         />
                       )}
                       
-                      <div className="flex flex-col gap-1">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={order.status?.toLowerCase() === 'выдан'}
-                            onChange={(e) => handleCheckboxChange(order, e.target.checked)}
-                            disabled={!hasEditAccess}
-                            className="form-checkbox"
-                          />
-                          <div className={`${scale === 'default' ? '' : 'pt-6'}`}>
-                            <span>
-                              <span className="font-bold text-blue-600 text-xl">{order.orderNumber}</span>
-                              {order.prisadkaNumber && (
-                                <span className="font-bold text-red-600 text-xl">{`-${order.prisadkaNumber}`}</span>
-                              )}
-                            </span>
-                            <div className="text-xs">
-                              {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.`}
-                            </div>
-                          </div>
-                        </label>
-                        <div className="text-xs text-gray-500 pl-6">
-                          {`${order.orderDate} • ${order.client} • `}
-                          <span className={order.payment === 'Не оплачен' ? 'underline decoration-red-500 decoration-2' : ''}>
-                            {order.payment}
-                          </span>
-                          {order.status?.toLowerCase() === 'выдан' && (
-                            <> • <span>{order.status}</span></>
-                          )}
-                          {order.phone && (
-                            <>
-                              {' • '}
-                              <a 
-                                href={`tel:${order.phone}`}
-                                className="text-blue-500 hover:text-blue-700"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {order.phone}
-                              </a>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      {order.payment?.toLowerCase() === 'оплачен' && (
+                        <Coins 
+                          className="absolute left-2 text-yellow-500" 
+                          style={{ 
+                            width: '18px',
+                            height: '18px',
+                            top: '35px'  // увеличил отступ сверху с 28px до 35px
+                          }} 
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
