@@ -282,7 +282,53 @@ const OrderDistributionTable = ({
                       } ${order.status?.toLowerCase() === 'выдан' ? 'bg-green-50' : 'bg-white'} 
                       ${!hasEditAccess ? 'cursor-default' : 'cursor-move'} min-h-[60px]`}
                     >
-                      {cardView === 'default' ? (
+                      {cardView === 'compact' ? (
+                        <div className="flex flex-col gap-1">
+                          <label className="flex items-start gap-2">
+                            <input
+                              type="checkbox"
+                              checked={order.status?.toLowerCase() === 'выдан'}
+                              onChange={(e) => handleCheckboxChange(order, e.target.checked)}
+                              disabled={!hasEditAccess}
+                              className="form-checkbox mt-1"
+                            />
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-blue-600 text-lg">
+                                  {order.orderNumber}
+                                  {order.prisadkaNumber && (
+                                    <span className="font-bold text-red-600">{`-${order.prisadkaNumber}`}</span>
+                                  )}
+                                </span>
+                              </div>
+                              {order.material && order.material !== '16мм' && (
+                                <span className={`text-sm italic px-1 rounded ${
+                                  order.material === '18мм' ? 'text-red-600 bg-amber-100' :
+                                  order.material === '10мм' ? 'text-blue-600 bg-blue-100' :
+                                  order.material === 'ЛДСП' ? 'text-purple-600 bg-purple-100' :
+                                  'text-red-600 bg-amber-100'
+                                }`}>
+                                  {order.material}
+                                </span>
+                              )}
+                              <div className="flex items-center gap-2 text-sm">
+                                <span>
+                                  {order.millingType ? order.millingType.charAt(0).toUpperCase() : ''} - {parseFloat(order.area.replace(',', '.')).toFixed(2)}
+                                </span>
+                                {order.payment?.toLowerCase() === 'оплачен' && (
+                                  <Coins 
+                                    className="text-yellow-500"
+                                    style={{ 
+                                      width: '18px',
+                                      height: '18px'
+                                    }} 
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          </label>
+                        </div>
+                      ) : (
                         <div className="flex flex-col gap-1">
                           <label className="flex items-center gap-2">
                             <input
@@ -326,40 +372,6 @@ const OrderDistributionTable = ({
                             )}
                           </div>
                         </div>
-                      ) : (
-                        <div className="flex flex-col gap-1">
-                          <label className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={order.status?.toLowerCase() === 'выдан'}
-                              onChange={(e) => handleCheckboxChange(order, e.target.checked)}
-                              disabled={!hasEditAccess}
-                              className="form-checkbox"
-                            />
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-blue-600 text-lg">
-                                {order.orderNumber}
-                                {order.prisadkaNumber && (
-                                  <span className="font-bold text-red-600">{`-${order.prisadkaNumber}`}</span>
-                                )}
-                              </span>
-                              <span className="text-sm">
-                                {order.millingType ? order.millingType.charAt(0).toUpperCase() : ''} - {parseFloat(order.area.replace(',', '.')).toFixed(2)}
-                              </span>
-                            </div>
-                          </label>
-                        </div>
-                      )}
-                      
-                      {order.material && order.material !== '16мм' && (
-                        <span className={`absolute top-1 right-2 italic px-1 rounded ${
-                          order.material === '18мм' ? 'text-red-600 bg-amber-100' :
-                          order.material === '10мм' ? 'text-blue-600 bg-blue-100' :
-                          order.material === 'ЛДСП' ? 'text-purple-600 bg-purple-100' :
-                          'text-red-600 bg-amber-100'
-                        }`} style={{ fontSize: '14px' }}>
-                          {order.material}
-                        </span>
                       )}
                       
                       {order.cadFiles?.toLowerCase() === 'отрисован' && (
@@ -371,17 +383,6 @@ const OrderDistributionTable = ({
                             height: '18px',
                             transform: 'rotate(-20deg)',
                             top: '28px'
-                          }} 
-                        />
-                      )}
-                      
-                      {cardView === 'compact' && order.payment?.toLowerCase() === 'оплачен' && (
-                        <Coins 
-                          className="absolute left-8 text-yellow-500"
-                          style={{ 
-                            width: '18px',
-                            height: '18px',
-                            top: '35px'
                           }} 
                         />
                       )}
