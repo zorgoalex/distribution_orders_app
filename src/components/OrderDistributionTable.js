@@ -292,18 +292,39 @@ const OrderDistributionTable = ({
                               disabled={!hasEditAccess}
                               className="form-checkbox"
                             />
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-blue-600 text-xl">
-                                {order.orderNumber}
+                            <div className={`${scale === 'default' ? '' : 'pt-6'}`}>
+                              <span>
+                                <span className="font-bold text-blue-600 text-xl">{order.orderNumber}</span>
                                 {order.prisadkaNumber && (
-                                  <span className="font-bold text-red-600">{`-${order.prisadkaNumber}`}</span>
+                                  <span className="font-bold text-red-600 text-xl">{`-${order.prisadkaNumber}`}</span>
                                 )}
                               </span>
-                              <span className="text-sm">
-                                {order.millingType ? order.millingType.charAt(0).toUpperCase() : ''} - {parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.
-                              </span>
+                              <div className="text-xs">
+                                {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.`}
+                              </div>
                             </div>
                           </label>
+                          <div className="text-xs text-gray-500 pl-6">
+                            {`${order.orderDate} • ${order.client} • `}
+                            <span className={order.payment === 'Не оплачен' ? 'underline decoration-red-500 decoration-2' : ''}>
+                              {order.payment}
+                            </span>
+                            {order.status?.toLowerCase() === 'выдан' && (
+                              <> • <span>{order.status}</span></>
+                            )}
+                            {order.phone && (
+                              <>
+                                {' • '}
+                                <a 
+                                  href={`tel:${order.phone}`}
+                                  className="text-blue-500 hover:text-blue-700"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {order.phone}
+                                </a>
+                              </>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         <div className="flex flex-col gap-1">
@@ -316,14 +337,14 @@ const OrderDistributionTable = ({
                               className="form-checkbox"
                             />
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-blue-600 text-xl">
+                              <span className="font-bold text-blue-600 text-lg">
                                 {order.orderNumber}
                                 {order.prisadkaNumber && (
                                   <span className="font-bold text-red-600">{`-${order.prisadkaNumber}`}</span>
                                 )}
                               </span>
                               <span className="text-sm">
-                                {order.millingType ? order.millingType.charAt(0).toUpperCase() : ''} - {parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.
+                                {order.millingType ? order.millingType.charAt(0).toUpperCase() : ''} - {parseFloat(order.area.replace(',', '.')).toFixed(2)}
                               </span>
                             </div>
                           </label>
@@ -354,13 +375,13 @@ const OrderDistributionTable = ({
                         />
                       )}
                       
-                      {order.payment?.toLowerCase() === 'оплачен' && (
+                      {cardView === 'compact' && order.payment?.toLowerCase() === 'оплачен' && (
                         <Coins 
-                          className="absolute left-2 text-yellow-500" 
+                          className="absolute left-8 text-yellow-500"
                           style={{ 
                             width: '18px',
                             height: '18px',
-                            top: '35px'  // увеличил отступ сверху с 28px до 35px
+                            top: '35px'
                           }} 
                         />
                       )}
