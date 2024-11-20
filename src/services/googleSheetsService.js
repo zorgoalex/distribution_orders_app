@@ -408,6 +408,18 @@ class GoogleSheetsService {
       throw new Error('Ошибка при обновлении статуса заказа');
     }
   }
+
+  async getUserInfo() {
+    try {
+      const response = await this.gapi.client.drive.about.get({
+        fields: 'user'
+      });
+      return response.result.user;
+    } catch (error) {
+      console.error('Error getting user info:', error);
+      return null;
+    }
+  }
 }
 
 export const googleSheetsService = new GoogleSheetsService();

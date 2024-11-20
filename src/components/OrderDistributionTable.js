@@ -21,6 +21,7 @@ const OrderDistributionTable = ({
   const [pendingMove, setPendingMove] = useState(null);
   const [scale, setScale] = useState('default'); // 'default', 'medium', 'large', 'full'
   const [view, setView] = useState('table'); // 'table', 'kanban'
+  const [userInfo, setUserInfo] = useState(null);
 
   const executeOrderMove = async (order, sourceDate, targetDate, updateDeliveryDate = false) => {
     try {
@@ -156,178 +157,195 @@ const OrderDistributionTable = ({
     }
   }, [orders]);
 
+  useEffect(() => {
+    const loadUserInfo = async () => {
+      const info = await googleSheetsService.getUserInfo();
+      setUserInfo(info);
+    };
+    loadUserInfo();
+  }, []);
+
   return (
     <div className="p-4">
-      <div className="flex justify-between mb-4">
-        {/* Кнопки масштаба слева */}
-        <div className="flex gap-2">
-          <button 
-            className="p-2 border rounded hover:bg-gray-100"
-            onClick={() => setScale(prev => {
-              switch(prev) {
-                case 'full': return 'large';
-                case 'large': return 'medium';
-                case 'medium': return 'default';
-                default: return 'default';
-              }
-            })}
-          >
-            <Minus className="w-6 h-6" />
-          </button>
-          <button 
-            className="p-2 border rounded hover:bg-gray-100"
-            onClick={() => setScale(prev => {
-              switch(prev) {
-                case 'default': return 'medium';
-                case 'medium': return 'large';
-                case 'large': return 'full';
-                default: return 'full';
-              }
-            })}
-          >
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
+      <div className="fixed top-0 left-0 right-0 bg-gray-50 z-50 border-b border-gray-200">
+        <div className="flex justify-between p-4 mx-4">
+          <div className="flex gap-2">
+            <button 
+              className="p-2 border rounded hover:bg-gray-100"
+              onClick={() => setScale(prev => {
+                switch(prev) {
+                  case 'full': return 'large';
+                  case 'large': return 'medium';
+                  case 'medium': return 'default';
+                  default: return 'default';
+                }
+              })}
+            >
+              <Minus className="w-6 h-6" />
+            </button>
+            <button 
+              className="p-2 border rounded hover:bg-gray-100"
+              onClick={() => setScale(prev => {
+                switch(prev) {
+                  case 'default': return 'medium';
+                  case 'medium': return 'large';
+                  case 'large': return 'full';
+                  default: return 'full';
+                }
+              })}
+            >
+              <Plus className="w-6 h-6" />
+            </button>
+          </div>
 
-        {/* Переключатель вида справа */}
-        <button
-          className="p-2 border rounded hover:bg-gray-100"
-          onClick={() => setView(prev => prev === 'table' ? 'kanban' : 'table')}
-        >
-          {view === 'table' ? <Columns className="w-6 h-6" /> : <Table className="w-6 h-6" />}
-        </button>
+          <div className="flex items-center gap-4">
+            {userInfo && (
+              <span className="text-gray-600">
+                {userInfo.emailAddress}
+              </span>
+            )}
+            <button
+              className="p-2 border rounded hover:bg-gray-100"
+              onClick={() => setView(prev => prev === 'table' ? 'kanban' : 'table')}
+            >
+              {view === 'table' ? <Columns className="w-6 h-6" /> : <Table className="w-6 h-6" />}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className={getGridColumns()}>
-        {days.map((day) => {
-          const formattedDate = formatDate(day);
-          const dayOrders = ordersMap[formattedDate] || [];
-          const allCompleted = dayOrders.length > 0 && dayOrders.every(order => order.status === 'выдан');
+      <div className="mt-20">
+        <div className={getGridColumns()}>
+          {days.map((day) => {
+            const formattedDate = formatDate(day);
+            const dayOrders = ordersMap[formattedDate] || [];
+            const allCompleted = dayOrders.length > 0 && dayOrders.every(order => order.status === 'выдан');
 
-          return (
-            <div
-              key={formatDate(day)}
-              className={`border-2 rounded p-4 ${getCellWidth()} ${
-                dayOrders.length 
-                  ? allCompleted
-                    ? 'border-green-50'
-                    : 'border-amber-200'
-                  : 'border-gray-200'
-              }`}
-              onDragOver={handleDragOver}
-              onDrop={(e) => handleDrop(e, day)}
-            >
-              <div className="text-center mb-4">
-                <div className="text-lg">
-                  <span className="font-bold">{getDayName(day)}</span>
-                  <span className="font-normal"> ({formatDate(day)})</span>
-                  {dayOrders.length > 0 && (
-                    <>
-                      <span className="font-normal"> - </span>
-                      <span className="font-bold text-amber-700">
-                        {(() => {
-                          const rawTotal = getTotalArea(dayOrders);
-                          console.log('Raw total:', rawTotal);
-                          
-                          const number = parseFloat(rawTotal);
-                          console.log('Parsed number:', number);
-                          
-                          const formatted = number.toFixed(2);
-                          console.log('Formatted:', formatted);
-                          
-                          return formatted;
-                        })()} кв.м.
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {dayOrders.map((order) => (
-                  <div
-                    key={order.orderNumber}
-                    draggable={hasEditAccess}
-                    onDragStart={(e) => handleDragStart(e, order, formattedDate)}
-                    className={`p-2 rounded relative ${order.status?.toLowerCase() === 'готов' ? 'border-2 border-green-500' : 'border border-gray-200'} 
-                      ${order.status?.toLowerCase() === 'выдан' ? 'bg-green-50' : 'bg-white'} 
-                      ${!hasEditAccess ? 'cursor-default' : 'cursor-move'}`}
-                  >
-                    {order.material && order.material !== '16мм' && (
-                      <span className={`absolute top-1 right-2 italic px-1 rounded ${
-                        order.material === '18мм' ? 'text-red-600 bg-amber-100' :
-                        order.material === '10мм' ? 'text-blue-600 bg-blue-100' :
-                        order.material === 'ЛДСП' ? 'text-purple-600 bg-purple-100' :
-                        'text-red-600 bg-amber-100'
-                      }`} style={{ fontSize: '14px' }}>
-                        {order.material}
-                      </span>
-                    )}
-                    
-                    {order.cadFiles?.toLowerCase() === 'отрисован' && (
-                      <PencilIcon 
-                        className="absolute right-2 text-[#7C3AED] font-thin"
-                        style={{ 
-                          fontSize: '18px',
-                          width: '18px',
-                          height: '18px',
-                          transform: 'rotate(-20deg)',
-                          top: '28px'
-                        }} 
-                      />
-                    )}
-                    
-                    <div className="flex flex-col gap-1">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={order.status?.toLowerCase() === 'выдан'}
-                          onChange={(e) => handleCheckboxChange(order, e.target.checked)}
-                          disabled={!hasEditAccess}
-                          className="form-checkbox"
-                        />
-                        <div className={`${scale === 'default' ? '' : 'pt-6'}`}>
-                          <span>
-                            <span className="font-bold text-blue-600 text-xl">{order.orderNumber}</span>
-                            {order.prisadkaNumber && (
-                              <span className="font-bold text-red-600 text-xl">{`-${order.prisadkaNumber}`}</span>
-                            )}
-                          </span>
-                          <div className="text-xs">
-                            {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.`}
-                          </div>
-                        </div>
-                      </label>
-                      <div className="text-xs text-gray-500 pl-6">
-                        {`${order.orderDate} • ${order.client} • `}
-                        <span className={order.payment === 'Не оплачен' ? 'underline decoration-red-500 decoration-2' : ''}>
-                          {order.payment}
+            return (
+              <div
+                key={formatDate(day)}
+                className={`border-2 rounded p-4 ${getCellWidth()} ${
+                  dayOrders.length 
+                    ? allCompleted
+                      ? 'border-green-50'
+                      : 'border-amber-200'
+                    : 'border-gray-200'
+                }`}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, day)}
+              >
+                <div className="text-center mb-4">
+                  <div className="text-lg">
+                    <span className="font-bold">{getDayName(day)}</span>
+                    <span className="font-normal"> ({formatDate(day)})</span>
+                    {dayOrders.length > 0 && (
+                      <>
+                        <span className="font-normal"> - </span>
+                        <span className="font-bold text-amber-700">
+                          {(() => {
+                            const rawTotal = getTotalArea(dayOrders);
+                            console.log('Raw total:', rawTotal);
+                            
+                            const number = parseFloat(rawTotal);
+                            console.log('Parsed number:', number);
+                            
+                            const formatted = number.toFixed(2);
+                            console.log('Formatted:', formatted);
+                            
+                            return formatted;
+                          })()} кв.м.
                         </span>
-                        {order.status?.toLowerCase() === 'выдан' && (
-                          <> • <span>{order.status}</span></>
-                        )}
-                        {order.phone && (
-                          <>
-                            {' • '}
-                            <a 
-                              href={`tel:${order.phone}`}
-                              className="text-blue-500 hover:text-blue-700"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {order.phone}
-                            </a>
-                          </>
-                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {dayOrders.map((order) => (
+                    <div
+                      key={order.orderNumber}
+                      draggable={hasEditAccess}
+                      onDragStart={(e) => handleDragStart(e, order, formattedDate)}
+                      className={`p-2 rounded relative ${order.status?.toLowerCase() === 'готов' ? 'border-2 border-green-500' : 'border border-gray-200'} 
+                        ${order.status?.toLowerCase() === 'выдан' ? 'bg-green-50' : 'bg-white'} 
+                        ${!hasEditAccess ? 'cursor-default' : 'cursor-move'}`}
+                    >
+                      {order.material && order.material !== '16мм' && (
+                        <span className={`absolute top-1 right-2 italic px-1 rounded ${
+                          order.material === '18мм' ? 'text-red-600 bg-amber-100' :
+                          order.material === '10мм' ? 'text-blue-600 bg-blue-100' :
+                          order.material === 'ЛДСП' ? 'text-purple-600 bg-purple-100' :
+                          'text-red-600 bg-amber-100'
+                        }`} style={{ fontSize: '14px' }}>
+                          {order.material}
+                        </span>
+                      )}
+                      
+                      {order.cadFiles?.toLowerCase() === 'отрисован' && (
+                        <PencilIcon 
+                          className="absolute right-2 text-[#7C3AED] font-thin"
+                          style={{ 
+                            fontSize: '18px',
+                            width: '18px',
+                            height: '18px',
+                            transform: 'rotate(-20deg)',
+                            top: '28px'
+                          }} 
+                        />
+                      )}
+                      
+                      <div className="flex flex-col gap-1">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={order.status?.toLowerCase() === 'выдан'}
+                            onChange={(e) => handleCheckboxChange(order, e.target.checked)}
+                            disabled={!hasEditAccess}
+                            className="form-checkbox"
+                          />
+                          <div className={`${scale === 'default' ? '' : 'pt-6'}`}>
+                            <span>
+                              <span className="font-bold text-blue-600 text-xl">{order.orderNumber}</span>
+                              {order.prisadkaNumber && (
+                                <span className="font-bold text-red-600 text-xl">{`-${order.prisadkaNumber}`}</span>
+                              )}
+                            </span>
+                            <div className="text-xs">
+                              {`. ${order.millingType || '\u00A0'.repeat(8)} - ${parseFloat(order.area.replace(',', '.')).toFixed(2)}кв.м.`}
+                            </div>
+                          </div>
+                        </label>
+                        <div className="text-xs text-gray-500 pl-6">
+                          {`${order.orderDate} • ${order.client} • `}
+                          <span className={order.payment === 'Не оплачен' ? 'underline decoration-red-500 decoration-2' : ''}>
+                            {order.payment}
+                          </span>
+                          {order.status?.toLowerCase() === 'выдан' && (
+                            <> • <span>{order.status}</span></>
+                          )}
+                          {order.phone && (
+                            <>
+                              {' • '}
+                              <a 
+                                href={`tel:${order.phone}`}
+                                className="text-blue-500 hover:text-blue-700"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {order.phone}
+                              </a>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-
+      
       <ConfirmationModal
         isOpen={isModalOpen}
         onClose={handleModalClose}
