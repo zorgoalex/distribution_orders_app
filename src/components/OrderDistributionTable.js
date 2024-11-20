@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { formatDate, getDayName } from '../utils/dateUtils';
 import ConfirmationModal from './ConfirmationModal';
-import { Plus, Minus, Table, Columns } from 'lucide-react';
+import { Plus, Minus, Table, Columns, PencilIcon } from 'lucide-react';
 
 const OrderDistributionTable = ({ 
   days,
@@ -263,6 +263,20 @@ const OrderDistributionTable = ({
                         {order.material}
                       </span>
                     )}
+                    
+                    {order.cadFiles?.toLowerCase() === 'отрисован' && (
+                      <PencilIcon 
+                        className="absolute right-2 text-amber-500" 
+                        style={{ 
+                          fontSize: '21px',
+                          width: '21px',
+                          height: '21px',
+                          transform: 'rotate(-20deg)',
+                          top: '28px'
+                        }} 
+                      />
+                    )}
+                    
                     <div className="flex flex-col gap-1">
                       <label className="flex items-center gap-2">
                         <input
