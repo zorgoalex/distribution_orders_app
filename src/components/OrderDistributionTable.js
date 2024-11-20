@@ -268,9 +268,9 @@ const OrderDistributionTable = ({
                       <PencilIcon 
                         className="absolute right-2 text-amber-500" 
                         style={{ 
-                          fontSize: '21px',
-                          width: '21px',
-                          height: '21px',
+                          fontSize: '18px',
+                          width: '18px',
+                          height: '18px',
                           transform: 'rotate(-20deg)',
                           top: '28px'
                         }} 
