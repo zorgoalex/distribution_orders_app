@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { formatDate, getDayName } from '../utils/dateUtils';
 import ConfirmationModal from './ConfirmationModal';
 import { Plus, Minus, Table, Columns, PencilIcon, LayoutList, LayoutGrid, Coins } from 'lucide-react';
@@ -19,10 +19,22 @@ const OrderDistributionTable = ({
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [pendingMove, setPendingMove] = useState(null);
-  const [scale, setScale] = useState('default'); // 'default', 'medium', 'large', 'full'
-  const [view, setView] = useState('table'); // 'table', 'kanban'
+  const [columnsCount, setColumnsCount] = useState(7); // Начальное количество столбцов
+  const [view, setView] = useState('table');
   const [userInfo, setUserInfo] = useState(null);
-  const [cardView, setCardView] = useState('default'); // 'default' или 'compact'
+  const [cardView, setCardView] = useState('default');
+
+  // Константы для масштабирования
+  const MAX_COLUMNS = 7; // Максимальное количество столбцов
+  const MIN_COLUMNS = 1; // Минимальное количество столбцов
+
+  const handleZoomOut = useCallback(() => {
+    setColumnsCount(prev => Math.min(prev + 1, MAX_COLUMNS));
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    setColumnsCount(prev => Math.max(prev - 1, MIN_COLUMNS));
+  }, []);
 
   const executeOrderMove = async (order, sourceDate, targetDate, updateDeliveryDate = false) => {
     try {
@@ -121,22 +133,12 @@ const OrderDistributionTable = ({
     handleOrderMove(order, sourceDate, targetDate);
   };
 
-  const getGridColumns = () => {
-    if (view === 'kanban') {
-      return 'flex overflow-x-auto';
-    }
-    switch(scale) {
-      case 'default':
-        return 'grid grid-cols-7';
-      case 'medium':
-        return 'grid grid-cols-4';
-      case 'large':
-        return 'grid grid-cols-2';
-      case 'full':
-        return 'grid grid-cols-1';
-      default:
-        return 'grid grid-cols-7';
-    }
+  // Основная сетка с динамическим количеством столбцов
+  const mainGridStyles = {
+    display: view === 'kanban' ? 'flex' : 'grid',
+    gridTemplateColumns: view === 'table' ? `repeat(${columnsCount}, minmax(0, 1fr))` : undefined,
+    overflowX: view === 'kanban' ? 'auto' : undefined,
+    gap: '0.5rem'
   };
 
   useEffect(() => {
@@ -156,7 +158,7 @@ const OrderDistributionTable = ({
         }));
       }
     }
-  }, [orders]);
+  }, [orders, pendingMove]);
 
   useEffect(() => {
     const loadUserInfo = async () => {
@@ -172,31 +174,19 @@ const OrderDistributionTable = ({
         <div className="flex justify-between p-4 mx-4">
           <div className="flex gap-2">
             <button 
-              className="p-2 border rounded hover:bg-gray-100"
-              onClick={() => setScale(prev => {
-                switch(prev) {
-                  case 'full': return 'large';
-                  case 'large': return 'medium';
-                  case 'medium': return 'default';
-                  default: return 'default';
-                }
-              })}
+              className="p-2 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleZoomOut}
+              disabled={columnsCount >= MAX_COLUMNS}
             >
               <Minus className="w-6 h-6" />
             </button>
             <button 
-              className="p-2 border rounded hover:bg-gray-100"
-              onClick={() => setScale(prev => {
-                switch(prev) {
-                  case 'default': return 'medium';
-                  case 'medium': return 'large';
-                  case 'large': return 'full';
-                  default: return 'full';
-                }
-              })}
+              className="p-2 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={handleZoomIn}
+              disabled={columnsCount <= MIN_COLUMNS}
             >
               <Plus className="w-6 h-6" />
-            </button>
+              </button>
             <div className="border-l border-gray-200 mx-2" />
             <button
               className="p-2 border rounded hover:bg-gray-100"
@@ -226,7 +216,7 @@ const OrderDistributionTable = ({
       </div>
 
       <div className="mt-20">
-        <div className={getGridColumns()}>
+        <div style={mainGridStyles}>
           {days.map((day) => {
             const formattedDate = formatDate(day);
             const dayOrders = ordersMap[formattedDate] || [];
@@ -235,15 +225,16 @@ const OrderDistributionTable = ({
             return (
               <div
                 key={formatDate(day)}
-                className={`border-2 rounded p-4 ${getCellWidth()} ${
+                className={`border border-gray-300 p-2 rounded ${
                   dayOrders.length 
                     ? allCompleted
                       ? 'border-green-50'
-                      : 'border-amber-200'
+                      : 'border-blue-500'
                     : 'border-gray-200'
                 }`}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, day)}
+                style={{ minWidth: view === 'kanban' ? '300px' : undefined }}
               >
                 <div className="text-center mb-4">
                   <div className="text-lg">
@@ -255,14 +246,8 @@ const OrderDistributionTable = ({
                         <span className="font-bold text-amber-700">
                           {(() => {
                             const rawTotal = getTotalArea(dayOrders);
-                            console.log('Raw total:', rawTotal);
-                            
                             const number = parseFloat(rawTotal);
-                            console.log('Parsed number:', number);
-                            
                             const formatted = number.toFixed(2);
-                            console.log('Formatted:', formatted);
-                            
                             return formatted;
                           })()} кв.м.
                         </span>
@@ -294,14 +279,14 @@ const OrderDistributionTable = ({
                             />
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center gap-2">
-                                <span className="font-bold text-blue-600 text-lg">
+                                <span className="font-bold text-blue-600 text-[1.32rem]">
                                   {order.orderNumber}
                                   {order.prisadkaNumber && (
                                     <span className="font-bold text-red-600">{`-${order.prisadkaNumber}`}</span>
                                   )}
                                 </span>
                               </div>
-                              {order.material && order.material !== '16мм' && (
+                              {cardView === 'compact' && order.material && order.material !== '16мм' && (
                                 <span className={`text-sm italic px-1 rounded ${
                                   order.material === '18мм' ? 'text-red-600 bg-amber-100' :
                                   order.material === '10мм' ? 'text-blue-600 bg-blue-100' :
@@ -338,7 +323,7 @@ const OrderDistributionTable = ({
                               disabled={!hasEditAccess}
                               className="form-checkbox"
                             />
-                            <div className={`${scale === 'default' ? '' : 'pt-6'}`}>
+                            <div className={`${columnsCount === 1 ? '' : 'pt-6'}`}>
                               <span>
                                 <span className="font-bold text-blue-600 text-xl">{order.orderNumber}</span>
                                 {order.prisadkaNumber && (
@@ -372,6 +357,17 @@ const OrderDistributionTable = ({
                             )}
                           </div>
                         </div>
+                      )}
+                      
+                      {cardView !== 'compact' && order.material && order.material !== '16мм' && (
+                        <span className={`absolute top-1 right-2 italic px-1 rounded ${
+                          order.material === '18мм' ? 'text-red-600 bg-amber-100' :
+                          order.material === '10мм' ? 'text-blue-600 bg-blue-100' :
+                          order.material === 'ЛДСП' ? 'text-purple-600 bg-purple-100' :
+                          'text-red-600 bg-amber-100'
+                        }`} style={{ fontSize: '14px' }}>
+                          {order.material}
+                        </span>
                       )}
                       
                       {order.cadFiles?.toLowerCase() === 'отрисован' && (
