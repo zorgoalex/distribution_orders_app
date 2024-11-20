@@ -266,7 +266,7 @@ const OrderDistributionTable = ({
                     
                     {order.cadFiles?.toLowerCase() === 'отрисован' && (
                       <PencilIcon 
-                        className="absolute right-2 text-amber-500" 
+                        className="absolute right-2 text-[#7C3AED] font-thin"
                         style={{ 
                           fontSize: '18px',
                           width: '18px',
