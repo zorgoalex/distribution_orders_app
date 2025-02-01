@@ -2,7 +2,9 @@
 
 export const STATUSES = {
   COMPLETED: 'готов',
-  DELIVERED: 'выдан'
+  DELIVERED: 'выдан',
+  CUT: 'распилен',
+  UNKNOWN: '-'
 };
 
 export const PAYMENT_STATUSES = {
@@ -16,5 +18,7 @@ export const PAYMENT_STATUSES = {
 export const MILLING_TYPES = {
   MODERN: 'модерн',
   MILLING: 'фрезеровка',
-  ROUGH: 'черновой'
+  ROUGH: 'черновой',
+  COLOR: 'краска',
+  EXTRACT_TOP: 'выборка'
 };
