@@ -455,12 +455,28 @@ class GoogleSheetsService {
 
   async getUserInfo() {
     return this.handleApiCall(async () => {
+      console.log('getUserInfo called. Checking gapi and client states...');
+
+      if (!this.gapi) {
+        console.error('getUserInfo: this.gapi is not initialized.');
+        throw new Error('gapi not initialized for getUserInfo.');
+      }
+      if (!this.gapi.client) {
+        console.error('getUserInfo: this.gapi.client is not initialized.');
+        throw new Error('gapi.client not initialized for getUserInfo.');
+      }
+      if (!this.gapi.client.oauth2) {
+        console.error('getUserInfo: this.gapi.client.oauth2 API not available. Check discoveryDocs in initialize().');
+        // Attempt to load client.init again or ensure initialize() has fully completed.
+        // This might indicate a race condition or incomplete initialization.
+        await this.initialize(); // Re-ensure initialization, which loads discovery docs
+        if (!this.gapi.client.oauth2) { // Check again after re-initializing
+            throw new Error('OAuth2 API client still not available after re-init for getUserInfo.');
+        }
+      }
+
       try {
         console.log('Attempting to fetch user info via gapi.client.oauth2.userinfo.get()');
-        if (!this.gapi.client.oauth2) {
-          console.error('gapi.client.oauth2 API not available. Check discoveryDocs in initialize().');
-          throw new Error('OAuth2 API client not available for getUserInfo.');
-        }
         const response = await this.gapi.client.oauth2.userinfo.get();
         console.log('User info response:', response.result);
         return response.result;
