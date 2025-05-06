@@ -6,6 +6,8 @@ class GoogleSheetsService {
     this.isInitialized = false;
     this.tokenClient = null;
     this.accessToken = null;
+    this.idToken = null;
+    this.idTokenPayload = null;
     this.orders = [];
     this.isRefreshingToken = false;
     this.tokenRefreshPromise = null;
@@ -84,6 +86,24 @@ class GoogleSheetsService {
           } else {
             this.accessToken = tokenResponse.access_token;
             this.gapi.client.setToken(tokenResponse);
+            
+            if (tokenResponse.id_token) {
+              this.idToken = tokenResponse.id_token;
+              try {
+                this.idTokenPayload = this.parseJwt(this.idToken);
+                localStorage.setItem('gauth_id_token_payload', JSON.stringify(this.idTokenPayload));
+                console.log('ID token payload stored:', this.idTokenPayload);
+              } catch (e) {
+                console.error('Failed to parse ID token:', e);
+                this.idTokenPayload = null;
+                localStorage.removeItem('gauth_id_token_payload');
+              }
+            } else {
+                this.idToken = null;
+                this.idTokenPayload = null;
+                localStorage.removeItem('gauth_id_token_payload');
+            }
+
             localStorage.setItem('gauth_token', JSON.stringify({
               access_token: tokenResponse.access_token,
               expires_at: Date.now() + (tokenResponse.expires_in * 1000)
@@ -107,10 +127,29 @@ class GoogleSheetsService {
         if (tokenData.expires_at > Date.now()) {
           this.accessToken = tokenData.access_token;
           this.gapi.client.setToken({ access_token: tokenData.access_token });
-          console.log('Initialized with token from localStorage.');
+          console.log('Initialized with access token from localStorage.');
+          
+          const savedIdPayload = localStorage.getItem('gauth_id_token_payload');
+          if (savedIdPayload) {
+            try {
+              this.idTokenPayload = JSON.parse(savedIdPayload);
+              if (this.idTokenPayload && this.idTokenPayload.exp && (this.idTokenPayload.exp * 1000 < Date.now())) {
+                  console.log('Stored ID token payload has expired.');
+                  this.idTokenPayload = null;
+                  localStorage.removeItem('gauth_id_token_payload');
+              } else {
+                  console.log('Initialized with ID token payload from localStorage:', this.idTokenPayload);
+              }
+            } catch (e) {
+              console.error('Failed to parse saved ID token payload:', e);
+              this.idTokenPayload = null;
+              localStorage.removeItem('gauth_id_token_payload');
+            }
+          }
         } else {
           localStorage.removeItem('gauth_token');
-          console.log('Removed stale token from localStorage during init.');
+          localStorage.removeItem('gauth_id_token_payload');
+          console.log('Removed stale token and ID token payload from localStorage during init.');
         }
       }
 
@@ -454,40 +493,57 @@ class GoogleSheetsService {
   }
 
   async getUserInfo_V2() {
-    return this.handleApiCall(async () => {
-      console.log('getUserInfo_V2 called. Checking gapi and client states...');
-
-      if (!this.gapi) {
-        console.error('getUserInfo_V2: this.gapi is not initialized.');
-        throw new Error('gapi not initialized for getUserInfo_V2.');
-      }
-      if (!this.gapi.client) {
-        console.error('getUserInfo_V2: this.gapi.client is not initialized.');
-        throw new Error('gapi.client not initialized for getUserInfo_V2.');
-      }
-      if (!this.gapi.client.oauth2) {
-        console.error('getUserInfo_V2: this.gapi.client.oauth2 API not available. Check discoveryDocs in initialize().');
-        // Attempt to load client.init again or ensure initialize() has fully completed.
-        // This might indicate a race condition or incomplete initialization.
-        await this.initialize(); // Re-ensure initialization, which loads discovery docs
-        if (!this.gapi.client.oauth2) { // Check again after re-initializing
-            throw new Error('OAuth2 API client still not available after re-init for getUserInfo_V2.');
+    return new Promise((resolve) => {
+        console.log('getUserInfo_V2 called. Using ID token payload.');
+        if (this.idTokenPayload) {
+            const userInfo = {
+                email: this.idTokenPayload.email,
+                name: this.idTokenPayload.name,
+                picture: this.idTokenPayload.picture,
+                id: this.idTokenPayload.sub,
+            };
+            console.log('Returning user info from ID token:', userInfo);
+            resolve(userInfo);
+        } else {
+            const savedIdPayloadString = localStorage.getItem('gauth_id_token_payload');
+            if (savedIdPayloadString) {
+                try {
+                    const savedIdPayload = JSON.parse(savedIdPayloadString);
+                    if (savedIdPayload && (!savedIdPayload.exp || (savedIdPayload.exp * 1000 >= Date.now()))) {
+                        this.idTokenPayload = savedIdPayload;
+                        const userInfo = {
+                            email: this.idTokenPayload.email,
+                            name: this.idTokenPayload.name,
+                            picture: this.idTokenPayload.picture,
+                            id: this.idTokenPayload.sub,
+                        };
+                        console.log('Returning user info from localStorage ID token payload:', userInfo);
+                        return resolve(userInfo);
+                    }
+                } catch (e) {
+                    console.error('Error parsing localStorage ID token for getUserInfo_V2:', e);
+                }
+            }
+            
+            console.warn('User info (ID token payload) not available. Returning defaults.');
+            resolve({ name: 'N/A', email: 'N/A', error: 'ID token not available or failed to parse.' });
         }
-      }
-
-      try {
-        console.log('Attempting to fetch user info via gapi.client.oauth2.userinfo.get()');
-        const response = await this.gapi.client.oauth2.userinfo.get();
-        console.log('User info response:', response.result);
-        return response.result;
-      } catch (error) {
-        console.error("Error fetching user info with gapi.client.oauth2.userinfo.get():", error);
-        if (error.result && error.result.error) {
-            console.error("GAPI error details:", error.result.error.message, "Code:", error.result.error.code, "Status:", error.result.error.status);
-        }
-        return { name: 'N/A', email: 'N/A', error: 'Failed to fetch user info', details: error.message }; 
-      }
     });
+  }
+
+  parseJwt(token) {
+    if (!token) return null;
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      return JSON.parse(jsonPayload);
+    } catch (e) {
+      console.error("Error parsing JWT: ", e);
+      return null;
+    }
   }
 
   async refreshToken() {

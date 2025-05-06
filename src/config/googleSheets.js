@@ -3,10 +3,11 @@ export const GOOGLE_SHEETS_CONFIG = {
   CLIENT_ID: process.env.REACT_APP_GOOGLE_CLIENT_ID,
   SPREADSHEET_ID: process.env.REACT_APP_SPREADSHEET_ID,
   SCOPES: [
+    'openid',
+    'profile',
+    'email',
     'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.readonly',
-    'https://www.googleapis.com/auth/userinfo.email',
-    'https://www.googleapis.com/auth/userinfo.profile'
+    'https://www.googleapis.com/auth/drive.readonly'
   ],
   COLUMNS: {
     ORDER_DATE: 'A',
