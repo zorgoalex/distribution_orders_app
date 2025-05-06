@@ -4,7 +4,9 @@ export const GOOGLE_SHEETS_CONFIG = {
   SPREADSHEET_ID: process.env.REACT_APP_SPREADSHEET_ID,
   SCOPES: [
     'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive.readonly'
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile'
   ],
   COLUMNS: {
     ORDER_DATE: 'A',

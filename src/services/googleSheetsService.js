@@ -62,7 +62,8 @@ class GoogleSheetsService {
         apiKey: GOOGLE_SHEETS_CONFIG.API_KEY,
         discoveryDocs: [
           'https://sheets.googleapis.com/$discovery/rest?version=v4',
-          'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'
+          'https://www.googleapis.com/discovery/v1/apis/drive/v3/rest',
+          'https://www.googleapis.com/discovery/v1/apis/oauth2/v2/rest'
         ],
       });
 
@@ -454,14 +455,21 @@ class GoogleSheetsService {
 
   async getUserInfo() {
     return this.handleApiCall(async () => {
-      if (!this.gapi.auth2 || !this.gapi.auth2.getAuthInstance().isSignedIn.get()) {
-        try {
-            const response = await this.gapi.client.oauth2.userinfo.get();
-            return response.result;
-        } catch (error) {
-            console.error("Error fetching user info with gapi.client.oauth2:", error);
-            return { name: 'N/A', email: 'N/A' }; 
+      try {
+        console.log('Attempting to fetch user info via gapi.client.oauth2.userinfo.get()');
+        if (!this.gapi.client.oauth2) {
+          console.error('gapi.client.oauth2 API not available. Check discoveryDocs in initialize().');
+          throw new Error('OAuth2 API client not available for getUserInfo.');
         }
+        const response = await this.gapi.client.oauth2.userinfo.get();
+        console.log('User info response:', response.result);
+        return response.result;
+      } catch (error) {
+        console.error("Error fetching user info with gapi.client.oauth2.userinfo.get():", error);
+        if (error.result && error.result.error) {
+            console.error("GAPI error details:", error.result.error.message, "Code:", error.result.error.code, "Status:", error.result.error.status);
+        }
+        return { name: 'N/A', email: 'N/A', error: 'Failed to fetch user info', details: error.message }; 
       }
     });
   }
