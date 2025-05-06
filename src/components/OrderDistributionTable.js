@@ -162,7 +162,7 @@ const OrderDistributionTable = ({
 
   useEffect(() => {
     const loadUserInfo = async () => {
-      const info = await googleSheetsService.getUserInfo();
+      const info = await googleSheetsService.getUserInfo_V2();
       setUserInfo(info);
     };
     loadUserInfo();
