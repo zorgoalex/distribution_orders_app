@@ -7,6 +7,10 @@ class GoogleSheetsService {
     this.tokenClient = null;
     this.accessToken = null;
     this.orders = [];
+    this.isRefreshingToken = false;
+    this.tokenRefreshPromise = null;
+    this.tokenRefreshPromiseResolver = null;
+    this.onTokenAcquiredCallbacks = [];
   }
 
   async loadGoogleAPI() {
@@ -49,18 +53,11 @@ class GoogleSheetsService {
     }
 
     try {
-      // 1. Load the Google API client library
       this.gapi = await this.loadGoogleAPI();
-
-      // 2. Initialize the library with API key
       await new Promise((resolve, reject) => {
-        this.gapi.load('client', {
-          callback: resolve,
-          onerror: reject
-        });
+        this.gapi.load('client', { callback: resolve, onerror: reject });
       });
 
-      // 3. Initialize the API client
       await this.gapi.client.init({
         apiKey: GOOGLE_SHEETS_CONFIG.API_KEY,
         discoveryDocs: [
@@ -69,40 +66,50 @@ class GoogleSheetsService {
         ],
       });
 
-      // 4. Load Google Identity Services and wait for it to be ready
       const google = await this.loadGoogleIdentityServices();
 
-      // 5. Initialize token client with persistence
       this.tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_SHEETS_CONFIG.CLIENT_ID,
         scope: GOOGLE_SHEETS_CONFIG.SCOPES.join(' '),
-        prompt: '', // Suppress the prompt if we have a saved token
+        prompt: '',
         callback: (tokenResponse) => {
-          if (tokenResponse.error !== undefined) {
-            throw tokenResponse;
+          if (tokenResponse.error) {
+            console.error("Token client error:", tokenResponse.error, tokenResponse.error_description);
+            if (this.isRefreshingToken && this.tokenRefreshPromiseResolver) {
+              this.tokenRefreshPromiseResolver.reject(tokenResponse);
+            } else if (!this.isRefreshingToken) {
+              throw tokenResponse;
+            }
+          } else {
+            this.accessToken = tokenResponse.access_token;
+            this.gapi.client.setToken(tokenResponse);
+            localStorage.setItem('gauth_token', JSON.stringify({
+              access_token: tokenResponse.access_token,
+              expires_at: Date.now() + (tokenResponse.expires_in * 1000)
+            }));
+            console.log('Token acquired/refreshed successfully via main callback.');
+            if (this.isRefreshingToken && this.tokenRefreshPromiseResolver) {
+              this.tokenRefreshPromiseResolver.resolve(this.accessToken);
+            }
           }
-          this.accessToken = tokenResponse.access_token;
-          this.gapi.client.setToken(tokenResponse);
           
-          localStorage.setItem('gauth_token', JSON.stringify({
-            access_token: tokenResponse.access_token,
-            expires_at: Date.now() + (tokenResponse.expires_in * 1000)
-          }));
+          if (this.isRefreshingToken) {
+            this.isRefreshingToken = false;
+            this.tokenRefreshPromiseResolver = null;
+          }
         },
       });
 
       const savedToken = localStorage.getItem('gauth_token');
       if (savedToken) {
         const tokenData = JSON.parse(savedToken);
-        const now = Date.now();
-        
-        if (tokenData.expires_at > now) {
+        if (tokenData.expires_at > Date.now()) {
           this.accessToken = tokenData.access_token;
-          this.gapi.client.setToken({
-            access_token: tokenData.access_token
-          });
+          this.gapi.client.setToken({ access_token: tokenData.access_token });
+          console.log('Initialized with token from localStorage.');
         } else {
           localStorage.removeItem('gauth_token');
+          console.log('Removed stale token from localStorage during init.');
         }
       }
 
@@ -110,16 +117,17 @@ class GoogleSheetsService {
       return this.tokenClient;
     } catch (error) {
       console.error('Error initializing Google API:', error);
+      this.isInitialized = false;
       throw error;
     }
   }
 
   async signIn() {
     if (!this.isInitialized || !this.tokenClient) {
-      throw new Error('Service not initialized');
+      await this.initialize();
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
         const savedToken = localStorage.getItem('gauth_token');
         if (savedToken) {
@@ -131,31 +139,63 @@ class GoogleSheetsService {
             this.gapi.client.setToken({
               access_token: tokenData.access_token
             });
-            resolve(tokenData);
-            return;
+            return resolve(tokenData);
           } else {
             localStorage.removeItem('gauth_token');
           }
         }
 
-        this.tokenClient.callback = async (response) => {
-          if (response.error !== undefined) {
+        const handleSignInResponse = (response) => {
+          if (response.error) {
             reject(response);
+          } else {
+            resolve(response);
           }
-          this.accessToken = response.access_token;
-          this.gapi.client.setToken(response);
-
-          localStorage.setItem('gauth_token', JSON.stringify({
-            access_token: response.access_token,
-            expires_at: Date.now() + (response.expires_in * 1000)
-          }));
-
-          resolve(response);
         };
+
+        if (this.isRefreshingToken && this.tokenRefreshPromise) {
+          await this.tokenRefreshPromise;
+        }
+        
+        const currentSavedToken = localStorage.getItem('gauth_token');
+        if (currentSavedToken) {
+          const tokenData = JSON.parse(currentSavedToken);
+          if (tokenData.expires_at > Date.now()) {
+            this.accessToken = tokenData.access_token;
+            this.gapi.client.setToken({ access_token: this.accessToken });
+            return resolve(tokenData);
+          } else {
+            localStorage.removeItem('gauth_token');
+          }
+        }
+
+        const signInPromise = new Promise((resolveSignIn, rejectSignIn) => {
+            const originalTokenClientCallback = this.tokenClient.callback;
+
+            this.tokenClient.callback = (tokenResponse) => {
+                originalTokenClientCallback(tokenResponse);
+                if (tokenResponse.error) {
+                    rejectSignIn(tokenResponse);
+                } else {
+                    resolveSignIn(tokenResponse);
+                }
+            };
+            this.tokenClient.requestAccessToken({ prompt: 'consent' });
+        });
+        
+        this.isRefreshingToken = true;
+        const specificSignInPromise = new Promise((res, rej) => {
+            this.onTokenAcquiredCallbacks.push({ resolve: res, reject: rej });
+        });
         
         this.tokenClient.requestAccessToken({ prompt: 'consent' });
+        
+        resolve(await specificSignInPromise);
+
       } catch (err) {
         console.error('Error signing in:', err);
+        this.isRefreshingToken = false;
+        this.onTokenAcquiredCallbacks = [];
         reject(err);
       }
     });
@@ -179,29 +219,26 @@ class GoogleSheetsService {
   }
 
   async checkEditAccess() {
-    try {
+    return this.handleApiCall(async () => {
       const response = await this.gapi.client.drive.files.get({
         fileId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
         fields: 'capabilities'
       });
-
       return response.result.capabilities.canEdit || false;
-    } catch (error) {
-      console.error('Error checking edit access:', error);
-      return false;
-    }
+    });
   }
 
   async loadOrders() {
-    try {
-      console.log('Loading orders from spreadsheet...');
+    return this.handleApiCall(async () => {
+      console.log('Loading orders from spreadsheet via handleApiCall...');
       const response = await this.gapi.client.sheets.spreadsheets.values.get({
         spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
         range: 'A2:N'
       });
 
       console.log('Raw response from sheets:', response);
-      const orders = response.result.values.map(row => {
+      const values = response.result.values || [];
+      const orders = values.map(row => {
         const orderDate = this.formatDate(row[0] || '');
         const plannedDate = this.formatDate(row[6] || '');
         const deliveryDate = this.formatDate(row[10] || '');
@@ -226,29 +263,23 @@ class GoogleSheetsService {
 
       this.orders = orders;
       return orders;
-    } catch (error) {
-      console.error('Error loading orders:', error);
-      throw error;
-    }
+    });
   }
 
   async updateOrderStatus(rowIndex, newStatus, deliveryDate = null) {
-    try {
+    return this.handleApiCall(async () => {
       const updates = [];
       
-      // Обновляем статус
       updates.push({
         range: `${GOOGLE_SHEETS_CONFIG.COLUMNS.STATUS}${rowIndex + 2}`,
         values: [[newStatus]]
       });
       
-      // Всегда обновляем дату выдачи (пустая строка, если deliveryDate null)
       updates.push({
         range: `${GOOGLE_SHEETS_CONFIG.COLUMNS.DELIVERY_DATE}${rowIndex + 2}`,
         values: [[deliveryDate ? this.formatDate(deliveryDate) : '']]
       });
       
-      // Выполняем batch update
       await this.gapi.client.sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: GOOGLE_SHEETS_CONFIG.SPREADSHEET_ID,
         resource: {
@@ -256,40 +287,59 @@ class GoogleSheetsService {
           data: updates
         }
       });
-    } catch (error) {
-      console.error('Error updating order status:', error);
-      throw error;
-    }
+    });
   }
 
   async watchForChanges(callback) {
-    if (!this.isInitialized) {
-      throw new Error('Service not initialized');
-    }
+    let isWatching = true;
+    let pollInterval = GOOGLE_SHEETS_CONFIG.POLL_INTERVAL || 60000;
+    let errorCount = 0;
+    const maxErrors = 3;
 
-    const CHECK_INTERVAL = 3000; // 3 секунды между проверками
-    
     const checkForChanges = async () => {
+      if (!isWatching) return;
+
       try {
-        const orders = await this.loadOrders();
-        callback(orders);
+        console.log('Watching for changes: loading orders...');
+        const currentOrders = await this.loadOrders();
+        
+        if (JSON.stringify(currentOrders) !== JSON.stringify(this.orders)) {
+          console.log('Changes detected in watchForChanges.');
+          this.orders = [...currentOrders];
+          callback(this.orders);
+        }
+        errorCount = 0;
       } catch (error) {
-        console.error('Error watching for changes:', error);
+        console.error('Error during watchForChanges:', error);
+        errorCount++;
+        if (error.reauthRequired) {
+            console.error("Re-authentication required. Stopping watchForChanges.");
+            isWatching = false; 
+            return; 
+        }
+        if (errorCount >= maxErrors) {
+            console.error("Max errors reached in watchForChanges. Stopping watching.");
+            isWatching = false;
+            return;
+        }
+        pollInterval = Math.min(pollInterval * 2, 300000);
+      }
+
+      if (isWatching) {
+        setTimeout(checkForChanges, pollInterval);
       }
     };
 
-    await checkForChanges();
-
-    const intervalId = setInterval(checkForChanges, CHECK_INTERVAL);
+    setTimeout(checkForChanges, 1000);
 
     return () => {
-      clearInterval(intervalId);
+      console.log('Stopped watching for changes.');
+      isWatching = false;
     };
   }
 
   async updatePlannedDate(rowIndex, newDate) {
-    try {
-      // Форматируем дату перед отправкой
+    return this.handleApiCall(async () => {
       const formattedDate = this.formatDate(newDate);
       
       await this.gapi.client.sheets.spreadsheets.values.update({
@@ -297,23 +347,27 @@ class GoogleSheetsService {
         range: `G${rowIndex + 2}`,
         valueInputOption: 'USER_ENTERED',
         resource: {
-          values: [[formattedDate]] // Используем отформатированную дату
+          values: [[formattedDate]]
         }
       });
-    } catch (error) {
-      console.error('Error updating planned date:', error);
-      throw error;
-    }
+    });
   }
 
   isAuthenticated() {
-    return !!this.accessToken;
+    const token = this.gapi && this.gapi.client && this.gapi.client.getToken();
+    if (token && token.access_token) {
+        const savedToken = localStorage.getItem('gauth_token');
+        if (savedToken) {
+            const tokenData = JSON.parse(savedToken);
+            return tokenData.expires_at > Date.now();
+        }
+    }
+    return false;
   }
 
   formatDate(dateStr) {
     if (!dateStr) return '';
     
-    // Если это объект Date или ISO строка
     if (dateStr instanceof Date || dateStr.includes('T')) {
       const date = new Date(dateStr);
       const day = date.getDate().toString().padStart(2, '0');
@@ -322,29 +376,26 @@ class GoogleSheetsService {
       return `${day}.${month}.${year}`;
     }
     
-    // Обработка различных форматов даты
     const formats = [
-      /^(\d{2})\/(\d{2})\/(\d{4})$/, // DD/MM/YYYY
-      /^(\d{2})\.(\d{2})\.(\d{4})$/, // DD.MM.YYYY
-      /^(\d{4})-(\d{2})-(\d{2})$/    // YYYY-MM-DD
+      /^(\d{2})\/(\d{2})\/(\d{4})$/,
+      /^(\d{2})\.(\d{2})\.(\d{4})$/,
+      /^(\d{4})-(\d{2})-(\d{2})$/
     ];
 
     for (let format of formats) {
       const match = dateStr.match(format);
       if (match) {
         const [_, part1, part2, part3] = match;
-        // Всегда возвращаем в формате DD.MM.YYYY
-        if (format === formats[0]) { // из DD/MM/YYYY
+        if (format === formats[0]) {
           return `${part1}.${part2}.${part3}`;
-        } else if (format === formats[1]) { // уже в DD.MM.YYYY
+        } else if (format === formats[1]) {
           return dateStr;
-        } else { // из YYYY-MM-DD
+        } else {
           return `${part3}.${part2}.${part1}`;
         }
       }
     }
 
-    // Если формат не распознан, логируем предупреждение и возвращаем исходную строку
     console.warn('Unexpected date format:', dateStr);
     return dateStr;
   }
@@ -365,26 +416,21 @@ class GoogleSheetsService {
   }
 
   async handleOrderMove(order, sourceDate, targetDate, updateDeliveryDate = false) {
-    try {
+    return this.handleApiCall(async () => {
       const rowIndex = this.orders.findIndex(o => o.orderNumber === order.orderNumber);
       
-      // Всегда обновляем планируемую дату
       await this.updatePlannedDate(rowIndex, targetDate);
       
-      // Обновляем дату выдачи только если это запрошено И заказ имеет статус "выдан"
       if (updateDeliveryDate && order.status === 'выдан') {
         await this.updateOrderStatus(rowIndex, order.status, targetDate);
       }
       
       return await this.loadOrders();
-    } catch (error) {
-      console.error('Error moving order:', error);
-      throw new Error('Ошибка при перемещении заказа');
-    }
+    });
   }
 
   async handleCheckboxChange(order, isChecked, issueDate) {
-    try {
+    return this.handleApiCall(async () => {
       if (!this.orders || !this.orders.length) {
         throw new Error('Orders not loaded');
       }
@@ -403,21 +449,123 @@ class GoogleSheetsService {
 
       await this.updateOrderStatus(rowIndex, isChecked ? 'Выдан' : 'Готов', issueDate);
       return await this.loadOrders();
-    } catch (error) {
-      console.error('Error in handleCheckboxChange:', error);
-      throw new Error('Ошибка при обновлении статуса заказа');
-    }
+    });
   }
 
   async getUserInfo() {
+    return this.handleApiCall(async () => {
+      if (!this.gapi.auth2 || !this.gapi.auth2.getAuthInstance().isSignedIn.get()) {
+        try {
+            const response = await this.gapi.client.oauth2.userinfo.get();
+            return response.result;
+        } catch (error) {
+            console.error("Error fetching user info with gapi.client.oauth2:", error);
+            return { name: 'N/A', email: 'N/A' }; 
+        }
+      }
+    });
+  }
+
+  async refreshToken() {
+    if (!this.tokenClient) {
+      console.warn('Token client not ready for refreshToken, attempting to initialize.');
+      await this.initialize();
+      if (!this.tokenClient) {
+        console.error('Token client still not initialized after attempt. Cannot refresh token.');
+        throw new Error('Token client not initialized, cannot refresh.');
+      }
+    }
+
+    if (this.isRefreshingToken && this.tokenRefreshPromise) {
+      console.log('Token refresh already in progress, returning existing promise.');
+      return this.tokenRefreshPromise;
+    }
+
+    this.isRefreshingToken = true;
+    this.tokenRefreshPromise = new Promise((resolve, reject) => {
+      this.tokenRefreshPromiseResolver = { resolve, reject };
+      
+      console.log('Attempting silent token refresh (prompt: none) via refreshToken method.');
+      try {
+        this.tokenClient.requestAccessToken({ prompt: 'none' });
+      } catch (error) {
+        console.error("Error directly calling requestAccessToken in refreshToken:", error);
+        this.isRefreshingToken = false;
+        if (this.tokenRefreshPromiseResolver) {
+            this.tokenRefreshPromiseResolver.reject(error);
+        }
+        this.tokenRefreshPromiseResolver = null;
+        throw error; 
+      }
+    });
+
+    return this.tokenRefreshPromise;
+  }
+
+  async handleApiCall(apiFunction, retries = 1) {
     try {
-      const response = await this.gapi.client.drive.about.get({
-        fields: 'user'
-      });
-      return response.result.user;
+      if (!this.gapi || !this.gapi.client || !this.gapi.client.getToken()?.access_token) {
+        const savedToken = localStorage.getItem('gauth_token');
+        let tokenRestored = false;
+        if (savedToken) {
+          const tokenData = JSON.parse(savedToken);
+          if (tokenData.expires_at > Date.now()) {
+            this.accessToken = tokenData.access_token;
+            if (this.gapi && this.gapi.client) {
+                 this.gapi.client.setToken({ access_token: this.accessToken });
+            } else {
+                // If gapi.client is not ready, initialize() will set it.
+                // Storing accessToken here is fine; initialize will use it.
+            }
+            tokenRestored = true;
+            console.log('Token restored from localStorage for API call.');
+          } else {
+            localStorage.removeItem('gauth_token');
+            console.log('Stale token removed from localStorage.');
+          }
+        }
+        
+        if (!tokenRestored) {
+            console.warn('No valid token found before API call, attempting refresh.');
+            await this.refreshToken(); 
+            // After refreshToken, this.accessToken and gapi.client token should be set.
+        }
+      }
+      return await apiFunction();
     } catch (error) {
-      console.error('Error getting user info:', error);
-      return null;
+      const gapiError = error.result && error.result.error;
+      const isAuthError = (gapiError && gapiError.status === 401) ||
+                          (error.type === 'tokenResponse' && error.error && error.error !== 'popup_closed'); 
+                          // popup_closed might occur if prompt:'consent' was somehow triggered and closed by user.
+                          // For prompt:'none', this shouldn't be the primary error for expiration.
+
+      if (isAuthError && retries > 0) {
+        console.warn('API call failed due to auth error (Status:', 
+                     gapiError ? gapiError.status : 'N/A', 
+                     'TokenClientError:', error.error || 'N/A',
+                     '), attempting token refresh. Retries left:', retries);
+        try {
+          await this.refreshToken();
+          console.log('Token refresh attempt completed, retrying API call.');
+          return await this.handleApiCall(apiFunction, retries - 1);
+        } catch (refreshError) {
+          console.error('Failed to refresh token during API call retry, or retry also failed.', refreshError);
+          const authFailedError = new Error('Authentication required after refresh attempt failed.');
+          authFailedError.originalError = refreshError;
+          authFailedError.reauthRequired = true;
+          throw authFailedError;
+        }
+      } else {
+        if (isAuthError) {
+          console.error('Auth error on API call and no retries left, or initial refresh failed.', error);
+          const authFailedError = new Error('Authentication failed after retries.');
+          authFailedError.originalError = error;
+          authFailedError.reauthRequired = true;
+          throw authFailedError;
+        }
+        console.error('API call failed (not an auth error or retries exhausted):', error);
+        throw error; 
+      }
     }
   }
 }
