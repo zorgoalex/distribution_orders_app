@@ -76,6 +76,7 @@ class GoogleSheetsService {
         scope: GOOGLE_SHEETS_CONFIG.SCOPES.join(' '),
         prompt: '',
         callback: (tokenResponse) => {
+          console.log('TokenClient callback invoked. Full tokenResponse:', JSON.stringify(tokenResponse, null, 2));
           if (tokenResponse.error) {
             console.error("Token client error:", tokenResponse.error, tokenResponse.error_description);
             if (this.isRefreshingToken && this.tokenRefreshPromiseResolver) {
