@@ -5,6 +5,7 @@ import { GOOGLE_SHEETS_CONFIG } from '../config/googleSheets';
 const LoginPage = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isGsiInitialized, setIsGsiInitialized] = useState(false);
 
   const handleAuthSuccess = useCallback(async () => {
     try {
@@ -18,8 +19,10 @@ const LoginPage = ({ onLogin }) => {
     } catch (err) {
       console.error('Access check error:', err);
       setError('Ошибка проверки доступа: ' + (err.message || 'Неизвестная ошибка'));
+    } finally {
+      setIsLoading(false);
     }
-  }, [onLogin]);
+  }, [onLogin, setIsLoading, setError]);
 
   // New GSI Callback Handler
   const handleGsiCallbackFunction = useCallback(async (credentialResponse) => {
@@ -47,81 +50,67 @@ const LoginPage = ({ onLogin }) => {
     }
   }, [handleAuthSuccess, setIsLoading, setError]);
 
+  // Effect for primary initialization (Google Sheet Service, GSI client)
   useEffect(() => {
     const initializeGoogleAuthAndGsi = async () => {
+      setIsLoading(true);
+      setError(null);
+      setIsGsiInitialized(false);
       try {
-        setIsLoading(true);
-        setError(null);
-
-        // Initialize Google Sheets service (which loads GAPI and GSI client, and initializes TokenClient)
         await googleSheetsService.initialize();
 
-        // Check if already authenticated from a previous session
         if (googleSheetsService.isAuthenticated()) {
           console.log('User is already authenticated, proceeding to auth success.');
           await handleAuthSuccess();
-          // If already authenticated and handleAuthSuccess completes, no need to render login button.
-          // The parent component should navigate away.
-          // We might set isLoading to false here if not already handled by handleAuthSuccess or parent navigation.
-          setIsLoading(false); 
-          return; // Skip GSI button rendering if already logged in and validated
+          return;
         }
         
-        // If not authenticated, initialize GSI for sign-in
-        if (window.google && window.google.accounts && window.google.accounts.id) {
-          console.log('Initializing Google Accounts ID for sign-in button...');
+        // If not authenticated, initialize GSI for sign-in button
+        if (window.google?.accounts?.id) {
+          console.log('Initializing Google Accounts ID for sign-in.');
           window.google.accounts.id.initialize({
             client_id: GOOGLE_SHEETS_CONFIG.CLIENT_ID,
             callback: handleGsiCallbackFunction,
-            // auto_select: true, // Consider for automatic sign-in if one Google session exists
-            // ux_mode: 'popup', // Alternative to redirect
           });
-          
-          const signInButtonContainer = document.getElementById('googleSignInButtonContainer');
-          if (signInButtonContainer) {
-            window.google.accounts.id.renderButton(
-              signInButtonContainer,
-              { theme: "outline", size: "large", type: "standard", text: "signin_with" } 
-            );
-             console.log('Google Sign-In button rendered.');
-          } else {
-            console.warn('Google Sign-In button container not found at the time of rendering.');
-            // This might happen if the component re-renders and the div isn't there yet.
-            // A small timeout or ensuring div exists might be needed in complex scenarios.
-          }
-          // Optionally, display One Tap
-          // window.google.accounts.id.prompt((notification) => {
-          //   console.log('Google One Tap prompt notification:', notification);
-          //   if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          //     // Handle cases where One Tap is not shown (e.g., due to browser settings, user choice)
-          //     console.warn('One Tap UI not displayed or skipped.');
-          //   }
-          // });
+          setIsGsiInitialized(true);
         } else {
-          console.error('Google Identity Services (GSI) client not available.');
+          console.error('Google Identity Services (GSI) client not available for LoginPage.');
           setError('Не удалось загрузить компоненты входа Google.');
         }
-
       } catch (err) {
         console.error('Page Auth initialization error:', err);
         setError('Ошибка инициализации страницы входа: ' + (err.message || 'Неизвестная ошибка'));
       } finally {
-        // Set loading to false only if not already handled by an early exit (like already authenticated path)
-        // This ensures the login button (or loading state) is shown correctly if GSI init is pending
         if (!googleSheetsService.isAuthenticated()) {
-            setIsLoading(false); 
+             setIsLoading(false);
         }
       }
     };
 
-    // Ensure GSI script is loaded before attempting to use window.google.accounts.id
-    // googleSheetsService.initialize() already handles loading gsi client.
-    // We call initializeGoogleAuthAndGsi directly.
     initializeGoogleAuthAndGsi();
+  }, [handleAuthSuccess, handleGsiCallbackFunction]);
 
-  }, [handleAuthSuccess, handleGsiCallbackFunction]); // Added handleGsiCallbackFunction to dependencies
+  // Effect for rendering the GSI button once everything is ready
+  useEffect(() => {
+    if (!isLoading && isGsiInitialized && window.google?.accounts?.id) {
+      const signInButtonContainer = document.getElementById('googleSignInButtonContainer');
+      if (signInButtonContainer) {
+        if (signInButtonContainer.innerHTML.trim() === '') {
+          console.log('Rendering Google Sign-In button as container is ready and empty.');
+          window.google.accounts.id.renderButton(
+            signInButtonContainer,
+            { theme: "outline", size: "large", type: "standard", text: "signin_with" } 
+          );
+        } else {
+          console.log('Google Sign-In button container already has content.');
+        }
+      } else {
+        console.warn('Google Sign-In button container not found when attempting to render (isLoading:false, isGsiInitialized:true).');
+      }
+    }
+  }, [isLoading, isGsiInitialized]);
 
-  if (isLoading && !document.getElementById('googleSignInButtonContainer')) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-xl">Загрузка...</div>
