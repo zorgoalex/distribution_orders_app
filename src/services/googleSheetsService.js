@@ -173,14 +173,20 @@ class GoogleSheetsService {
 
       // Critical step: After successfully processing id_token, request access_token
       if (this.tokenClient) {
-        console.log('Requesting access_token with prompt:none');
-        this.tokenClient.requestAccessToken({ prompt: 'none' });
+        console.log('Requesting access_token with prompt:none and hint.');
+        this.tokenClient.requestAccessToken({
+          prompt: 'none',
+          hint: this.idTokenPayload?.email
+        });
       } else {
         console.error('TokenClient not initialized before requesting access token in processIdTokenResponse');
         // This case should ideally not happen if initialize() is called before any sign-in attempt
         await this.initialize(); // Attempt to initialize if not already
         if (this.tokenClient) {
-            this.tokenClient.requestAccessToken({ prompt: 'none' });
+            this.tokenClient.requestAccessToken({
+              prompt: 'none',
+              hint: this.idTokenPayload?.email
+            });
         } else {
             throw new Error("Failed to initialize TokenClient for access token request.");
         }
@@ -564,9 +570,26 @@ class GoogleSheetsService {
     this.tokenRefreshPromise = new Promise((resolve, reject) => {
       this.tokenRefreshPromiseResolver = { resolve, reject };
       
-      console.log('Attempting silent token refresh (prompt: none) via refreshToken method.');
+      console.log('Attempting silent token refresh (prompt: none) via refreshToken method, with hint.');
       try {
-        this.tokenClient.requestAccessToken({ prompt: 'none' });
+        // Try to get email from idTokenPayload or a fresh one from localStorage if service's is stale
+        let userEmailHint = this.idTokenPayload?.email;
+        if (!userEmailHint) {
+            const savedIdPayload = localStorage.getItem('gauth_id_token_payload');
+            if (savedIdPayload) {
+                try {
+                    const payload = JSON.parse(savedIdPayload);
+                    if (payload && payload.exp && (payload.exp * 1000 > Date.now())) {
+                        userEmailHint = payload.email;
+                    }
+                } catch (e) { console.warn('Could not parse stored id token for hint in refreshToken'); }
+            }
+        }
+
+        this.tokenClient.requestAccessToken({
+          prompt: 'none',
+          hint: userEmailHint // Add hint, ensuring it could be null if not found
+        });
       } catch (error) {
         console.error("Error directly calling requestAccessToken in refreshToken:", error);
         this.isRefreshingToken = false;
