@@ -76,43 +76,32 @@ class GoogleSheetsService {
         scope: GOOGLE_SHEETS_CONFIG.SCOPES.join(' '),
         prompt: '',
         callback: (tokenResponse) => {
-          console.log('TokenClient callback invoked. Full tokenResponse:', JSON.stringify(tokenResponse, null, 2));
+          console.log('TokenClient callback for access_token. Full tokenResponse:', JSON.stringify(tokenResponse, null, 2));
           if (tokenResponse.error) {
-            console.error("Token client error:", tokenResponse.error, tokenResponse.error_description);
+            console.error("Token client error (access_token):", tokenResponse.error, tokenResponse.error_description);
             if (this.isRefreshingToken && this.tokenRefreshPromiseResolver) {
               this.tokenRefreshPromiseResolver.reject(tokenResponse);
             } else if (!this.isRefreshingToken) {
-              throw tokenResponse;
+              // Potentially notify parts of the app that rely on access_token
             }
           } else {
             this.accessToken = tokenResponse.access_token;
-            this.gapi.client.setToken(tokenResponse);
+            // this.gapi.client.setToken(tokenResponse); // setToken is not strictly necessary here as gapi client doesn't use it directly for token management.
+                                                       // Instead, ensure accessToken is passed to API calls.
             
-            if (tokenResponse.id_token) {
-              this.idToken = tokenResponse.id_token;
-              try {
-                this.idTokenPayload = this.parseJwt(this.idToken);
-                localStorage.setItem('gauth_id_token_payload', JSON.stringify(this.idTokenPayload));
-                console.log('ID token payload stored:', this.idTokenPayload);
-              } catch (e) {
-                console.error('Failed to parse ID token:', e);
-                this.idTokenPayload = null;
-                localStorage.removeItem('gauth_id_token_payload');
-              }
-            } else {
-                this.idToken = null;
-                this.idTokenPayload = null;
-                localStorage.removeItem('gauth_id_token_payload');
-            }
-
             localStorage.setItem('gauth_token', JSON.stringify({
               access_token: tokenResponse.access_token,
               expires_at: Date.now() + (tokenResponse.expires_in * 1000)
             }));
-            console.log('Token acquired/refreshed successfully via main callback.');
+            console.log('Access Token acquired/refreshed successfully via TokenClient callback.');
+            
             if (this.isRefreshingToken && this.tokenRefreshPromiseResolver) {
               this.tokenRefreshPromiseResolver.resolve(this.accessToken);
             }
+            // Execute any pending callbacks that were waiting for the access token
+            this.onTokenAcquiredCallbacks.forEach(cb => cb.resolve(this.accessToken));
+            this.onTokenAcquiredCallbacks = [];
+
           }
           
           if (this.isRefreshingToken) {
@@ -122,124 +111,107 @@ class GoogleSheetsService {
         },
       });
 
+      // Load accessToken from localStorage
       const savedToken = localStorage.getItem('gauth_token');
       if (savedToken) {
         const tokenData = JSON.parse(savedToken);
         if (tokenData.expires_at > Date.now()) {
           this.accessToken = tokenData.access_token;
-          this.gapi.client.setToken({ access_token: tokenData.access_token });
+          // this.gapi.client.setToken({ access_token: tokenData.access_token }); // Similar to above, direct gapi.client.setToken is less critical here
           console.log('Initialized with access token from localStorage.');
-          
-          const savedIdPayload = localStorage.getItem('gauth_id_token_payload');
-          if (savedIdPayload) {
-            try {
-              this.idTokenPayload = JSON.parse(savedIdPayload);
-              if (this.idTokenPayload && this.idTokenPayload.exp && (this.idTokenPayload.exp * 1000 < Date.now())) {
-                  console.log('Stored ID token payload has expired.');
-                  this.idTokenPayload = null;
-                  localStorage.removeItem('gauth_id_token_payload');
-              } else {
-                  console.log('Initialized with ID token payload from localStorage:', this.idTokenPayload);
-              }
-            } catch (e) {
-              console.error('Failed to parse saved ID token payload:', e);
-              this.idTokenPayload = null;
-              localStorage.removeItem('gauth_id_token_payload');
-            }
-          }
         } else {
           localStorage.removeItem('gauth_token');
+          console.log('Removed stale access token from localStorage during init.');
+        }
+      }
+      
+      // Load idTokenPayload from localStorage
+      const savedIdPayload = localStorage.getItem('gauth_id_token_payload');
+      if (savedIdPayload) {
+        try {
+          this.idTokenPayload = JSON.parse(savedIdPayload);
+          if (this.idTokenPayload && this.idTokenPayload.exp && (this.idTokenPayload.exp * 1000 < Date.now())) {
+              console.log('Stored ID token payload has expired.');
+              this.idTokenPayload = null;
+              this.idToken = null; // Also clear the raw token if payload is expired
+              localStorage.removeItem('gauth_id_token_payload');
+              // Potentially clear gauth_token as well if ID token is the primary auth proof
+          } else {
+              console.log('Initialized with ID token payload from localStorage:', this.idTokenPayload);
+              // If we have a valid payload, we might have the idToken too (though not strictly necessary to store raw idToken long term)
+          }
+        } catch (e) {
+          console.error('Failed to parse saved ID token payload:', e);
+          this.idTokenPayload = null;
+          this.idToken = null;
           localStorage.removeItem('gauth_id_token_payload');
-          console.log('Removed stale token and ID token payload from localStorage during init.');
         }
       }
 
       this.isInitialized = true;
       return this.tokenClient;
     } catch (error) {
-      console.error('Error initializing Google API:', error);
+      console.error('Error initializing Google API or TokenClient:', error);
       this.isInitialized = false;
       throw error;
     }
   }
 
+  async processIdTokenResponse(credentialResponse) {
+    if (!credentialResponse || !credentialResponse.credential) {
+      console.error('Invalid credentialResponse received in processIdTokenResponse');
+      throw new Error('Invalid credentialResponse');
+    }
+    const idTokenString = credentialResponse.credential;
+    this.idToken = idTokenString;
+    console.log('Received ID Token:', idTokenString ? 'Yes' : 'No');
+
+    try {
+      this.idTokenPayload = this.parseJwt(idTokenString);
+      localStorage.setItem('gauth_id_token_payload', JSON.stringify(this.idTokenPayload));
+      console.log('ID token processed and payload stored:', this.idTokenPayload);
+
+      // Critical step: After successfully processing id_token, request access_token
+      if (this.tokenClient) {
+        console.log('Requesting access_token with prompt:none');
+        this.tokenClient.requestAccessToken({ prompt: 'none' });
+      } else {
+        console.error('TokenClient not initialized before requesting access token in processIdTokenResponse');
+        // This case should ideally not happen if initialize() is called before any sign-in attempt
+        await this.initialize(); // Attempt to initialize if not already
+        if (this.tokenClient) {
+            this.tokenClient.requestAccessToken({ prompt: 'none' });
+        } else {
+            throw new Error("Failed to initialize TokenClient for access token request.");
+        }
+      }
+      return this.idTokenPayload;
+    } catch (e) {
+      console.error('Failed to parse or store ID token:', e);
+      this.idToken = null;
+      this.idTokenPayload = null;
+      localStorage.removeItem('gauth_id_token_payload');
+      throw e;
+    }
+  }
+
   async signIn() {
-    if (!this.isInitialized || !this.tokenClient) {
-      await this.initialize();
+    // This method is now largely superseded by the GSI flow in LoginPage.js
+    // It might be called as a fallback or if parts of the app still use it.
+    // For now, let's ensure it doesn't interfere with the new flow.
+    console.warn('googleSheetsService.signIn() called. This method is being deprecated in favor of GSI flow in LoginPage.');
+    
+    // If already authenticated (e.g. via GSI flow), resolve immediately.
+    if (this.isAuthenticated()) {
+        console.log("signIn: Already authenticated based on idTokenPayload and accessToken.");
+        return Promise.resolve(this.idTokenPayload); 
     }
 
-    return new Promise(async (resolve, reject) => {
-      try {
-        const savedToken = localStorage.getItem('gauth_token');
-        if (savedToken) {
-          const tokenData = JSON.parse(savedToken);
-          const now = Date.now();
-          
-          if (tokenData.expires_at > now) {
-            this.accessToken = tokenData.access_token;
-            this.gapi.client.setToken({
-              access_token: tokenData.access_token
-            });
-            return resolve(tokenData);
-          } else {
-            localStorage.removeItem('gauth_token');
-          }
-        }
-
-        const handleSignInResponse = (response) => {
-          if (response.error) {
-            reject(response);
-          } else {
-            resolve(response);
-          }
-        };
-
-        if (this.isRefreshingToken && this.tokenRefreshPromise) {
-          await this.tokenRefreshPromise;
-        }
-        
-        const currentSavedToken = localStorage.getItem('gauth_token');
-        if (currentSavedToken) {
-          const tokenData = JSON.parse(currentSavedToken);
-          if (tokenData.expires_at > Date.now()) {
-            this.accessToken = tokenData.access_token;
-            this.gapi.client.setToken({ access_token: this.accessToken });
-            return resolve(tokenData);
-          } else {
-            localStorage.removeItem('gauth_token');
-          }
-        }
-
-        const signInPromise = new Promise((resolveSignIn, rejectSignIn) => {
-            const originalTokenClientCallback = this.tokenClient.callback;
-
-            this.tokenClient.callback = (tokenResponse) => {
-                originalTokenClientCallback(tokenResponse);
-                if (tokenResponse.error) {
-                    rejectSignIn(tokenResponse);
-                } else {
-                    resolveSignIn(tokenResponse);
-                }
-            };
-            this.tokenClient.requestAccessToken({ prompt: 'consent' });
-        });
-        
-        this.isRefreshingToken = true;
-        const specificSignInPromise = new Promise((res, rej) => {
-            this.onTokenAcquiredCallbacks.push({ resolve: res, reject: rej });
-        });
-        
-        this.tokenClient.requestAccessToken({ prompt: 'consent' });
-        
-        resolve(await specificSignInPromise);
-
-      } catch (err) {
-        console.error('Error signing in:', err);
-        this.isRefreshingToken = false;
-        this.onTokenAcquiredCallbacks = [];
-        reject(err);
-      }
-    });
+    // If not authenticated, this method should ideally not be the primary way to sign in.
+    // The GSI flow initiated from UI (LoginPage) should handle it.
+    // If we want this to trigger the GSI flow, it would need a way to communicate with the UI layer.
+    // For now, returning a rejected promise or a specific status might be best.
+    return Promise.reject(new Error("Sign-in should be initiated via Google Identity Services UI."));
   }
 
   async signOut() {
@@ -395,15 +367,31 @@ class GoogleSheetsService {
   }
 
   isAuthenticated() {
-    const token = this.gapi && this.gapi.client && this.gapi.client.getToken();
-    if (token && token.access_token) {
+    // Check for valid idTokenPayload (and its expiration)
+    const hasValidIdTokenPayload = this.idTokenPayload && 
+                                   this.idTokenPayload.exp && 
+                                   (this.idTokenPayload.exp * 1000 > Date.now());
+
+    // Check for accessToken (and its expiration, if gauth_token stores it)
+    let hasValidAccessToken = !!this.accessToken;
+    if (!hasValidAccessToken) {
         const savedToken = localStorage.getItem('gauth_token');
         if (savedToken) {
-            const tokenData = JSON.parse(savedToken);
-            return tokenData.expires_at > Date.now();
+            try {
+                const tokenData = JSON.parse(savedToken);
+                if (tokenData.access_token && tokenData.expires_at > Date.now()) {
+                    hasValidAccessToken = true;
+                    this.accessToken = tokenData.access_token; // Restore if found valid
+                }
+            } catch (e) {
+                console.warn("Error parsing gauth_token in isAuthenticated", e);
+            }
         }
     }
-    return false;
+    
+    const authenticated = hasValidIdTokenPayload && hasValidAccessToken;
+    console.log(`isAuthenticated: idTokenPayload valid: ${!!hasValidIdTokenPayload}, accessToken valid: ${!!hasValidAccessToken}, Result: ${authenticated}`);
+    return authenticated;
   }
 
   formatDate(dateStr) {
@@ -494,42 +482,52 @@ class GoogleSheetsService {
   }
 
   async getUserInfo_V2() {
-    return new Promise((resolve) => {
-        console.log('getUserInfo_V2 called. Using ID token payload.');
-        if (this.idTokenPayload) {
-            const userInfo = {
-                email: this.idTokenPayload.email,
-                name: this.idTokenPayload.name,
-                picture: this.idTokenPayload.picture,
-                id: this.idTokenPayload.sub,
-            };
-            console.log('Returning user info from ID token:', userInfo);
-            resolve(userInfo);
-        } else {
-            const savedIdPayloadString = localStorage.getItem('gauth_id_token_payload');
-            if (savedIdPayloadString) {
-                try {
-                    const savedIdPayload = JSON.parse(savedIdPayloadString);
-                    if (savedIdPayload && (!savedIdPayload.exp || (savedIdPayload.exp * 1000 >= Date.now()))) {
-                        this.idTokenPayload = savedIdPayload;
-                        const userInfo = {
-                            email: this.idTokenPayload.email,
-                            name: this.idTokenPayload.name,
-                            picture: this.idTokenPayload.picture,
-                            id: this.idTokenPayload.sub,
-                        };
-                        console.log('Returning user info from localStorage ID token payload:', userInfo);
-                        return resolve(userInfo);
-                    }
-                } catch (e) {
-                    console.error('Error parsing localStorage ID token for getUserInfo_V2:', e);
-                }
-            }
-            
-            console.warn('User info (ID token payload) not available. Returning defaults.');
-            resolve({ name: 'N/A', email: 'N/A', error: 'ID token not available or failed to parse.' });
+    console.log('getUserInfo_V2 called.');
+    if (this.idTokenPayload) {
+      console.log('Returning user info from this.idTokenPayload:', this.idTokenPayload);
+      return {
+        email: this.idTokenPayload.email,
+        name: this.idTokenPayload.name,
+        given_name: this.idTokenPayload.given_name,
+        family_name: this.idTokenPayload.family_name,
+        picture: this.idTokenPayload.picture,
+      };
+    }
+
+    const savedIdPayload = localStorage.getItem('gauth_id_token_payload');
+    if (savedIdPayload) {
+      try {
+        const payload = JSON.parse(savedIdPayload);
+        if (payload && payload.exp && (payload.exp * 1000 > Date.now())) {
+          this.idTokenPayload = payload; // Cache it back
+          console.log('Returning user info from localStorage (gauth_id_token_payload):', payload);
+          return {
+            email: payload.email,
+            name: payload.name,
+            given_name: payload.given_name,
+            family_name: payload.family_name,
+            picture: payload.picture,
+          };
+        } else if (payload) {
+            console.log("User info from localStorage is expired.");
+            localStorage.removeItem('gauth_id_token_payload');
+            this.idTokenPayload = null; // Clear stale data
         }
-    });
+      } catch (e) {
+        console.error('Failed to parse gauth_id_token_payload in getUserInfo_V2:', e);
+        localStorage.removeItem('gauth_id_token_payload');
+        this.idTokenPayload = null; // Clear stale data
+      }
+    }
+    
+    console.log('User info not available in idTokenPayload or localStorage.');
+    // Removed the gapi.client.oauth2.userinfo.get() call as it's deprecated and was causing issues.
+    // The id_token is now the source of truth for user info.
+    // If we reach here, it means the user is likely not authenticated or id_token is missing.
+    return {
+        email: 'Пользователь не определен',
+        name: 'Неизвестный пользователь',
+    };
   }
 
   parseJwt(token) {

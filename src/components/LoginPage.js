@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { googleSheetsService } from '../services/googleSheetsService';
+import { GOOGLE_SHEETS_CONFIG } from '../config/googleSheets';
 
 const LoginPage = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(true);
@@ -20,45 +21,107 @@ const LoginPage = ({ onLogin }) => {
     }
   }, [onLogin]);
 
+  // New GSI Callback Handler
+  const handleGsiCallbackFunction = useCallback(async (credentialResponse) => {
+    console.log('GSI Callback invoked. CredentialResponse:', credentialResponse);
+    setIsLoading(true);
+    setError(null);
+    try {
+      const idTokenPayload = await googleSheetsService.processIdTokenResponse(credentialResponse);
+      if (idTokenPayload) {
+        console.log('ID Token processed successfully, proceeding to auth success.');
+        await handleAuthSuccess();
+      } else {
+        throw new Error('Failed to process ID token or extract payload.');
+      }
+    } catch (err) {
+      console.error('GSI Callback - Error processing token or auth success:', err);
+      setError('Ошибка обработки данных входа: ' + (err.message || 'Неизвестная ошибка'));
+      // Ensure user info is cleared if GSI callback fails significantly
+      localStorage.removeItem('gauth_id_token_payload');
+      localStorage.removeItem('gauth_token'); 
+      googleSheetsService.idTokenPayload = null; // Clear in-memory cache
+      googleSheetsService.accessToken = null; // Clear in-memory cache
+    } finally {
+      setIsLoading(false);
+    }
+  }, [handleAuthSuccess, setIsLoading, setError]);
+
   useEffect(() => {
-    const initializeGoogleAuth = async () => {
+    const initializeGoogleAuthAndGsi = async () => {
       try {
         setIsLoading(true);
         setError(null);
 
-        // Initialize Google Sheets API and auth
+        // Initialize Google Sheets service (which loads GAPI and GSI client, and initializes TokenClient)
         await googleSheetsService.initialize();
 
-        // Check if already authenticated
+        // Check if already authenticated from a previous session
         if (googleSheetsService.isAuthenticated()) {
+          console.log('User is already authenticated, proceeding to auth success.');
           await handleAuthSuccess();
+          // If already authenticated and handleAuthSuccess completes, no need to render login button.
+          // The parent component should navigate away.
+          // We might set isLoading to false here if not already handled by handleAuthSuccess or parent navigation.
+          setIsLoading(false); 
+          return; // Skip GSI button rendering if already logged in and validated
         }
+        
+        // If not authenticated, initialize GSI for sign-in
+        if (window.google && window.google.accounts && window.google.accounts.id) {
+          console.log('Initializing Google Accounts ID for sign-in button...');
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_SHEETS_CONFIG.CLIENT_ID,
+            callback: handleGsiCallbackFunction,
+            // auto_select: true, // Consider for automatic sign-in if one Google session exists
+            // ux_mode: 'popup', // Alternative to redirect
+          });
+          
+          const signInButtonContainer = document.getElementById('googleSignInButtonContainer');
+          if (signInButtonContainer) {
+            window.google.accounts.id.renderButton(
+              signInButtonContainer,
+              { theme: "outline", size: "large", type: "standard", text: "signin_with" } 
+            );
+             console.log('Google Sign-In button rendered.');
+          } else {
+            console.warn('Google Sign-In button container not found at the time of rendering.');
+            // This might happen if the component re-renders and the div isn't there yet.
+            // A small timeout or ensuring div exists might be needed in complex scenarios.
+          }
+          // Optionally, display One Tap
+          // window.google.accounts.id.prompt((notification) => {
+          //   console.log('Google One Tap prompt notification:', notification);
+          //   if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          //     // Handle cases where One Tap is not shown (e.g., due to browser settings, user choice)
+          //     console.warn('One Tap UI not displayed or skipped.');
+          //   }
+          // });
+        } else {
+          console.error('Google Identity Services (GSI) client not available.');
+          setError('Не удалось загрузить компоненты входа Google.');
+        }
+
       } catch (err) {
-        console.error('Auth initialization error:', err);
-        setError('Ошибка инициализации Google Auth: ' + (err.message || 'Неизвестная ошибка'));
+        console.error('Page Auth initialization error:', err);
+        setError('Ошибка инициализации страницы входа: ' + (err.message || 'Неизвестная ошибка'));
       } finally {
-        setIsLoading(false);
+        // Set loading to false only if not already handled by an early exit (like already authenticated path)
+        // This ensures the login button (or loading state) is shown correctly if GSI init is pending
+        if (!googleSheetsService.isAuthenticated()) {
+            setIsLoading(false); 
+        }
       }
     };
 
-    initializeGoogleAuth();
-  }, [handleAuthSuccess]);
+    // Ensure GSI script is loaded before attempting to use window.google.accounts.id
+    // googleSheetsService.initialize() already handles loading gsi client.
+    // We call initializeGoogleAuthAndGsi directly.
+    initializeGoogleAuthAndGsi();
 
-  const handleGoogleLogin = async () => {
-    try {
-      setError(null);
-      setIsLoading(true);
-      await googleSheetsService.signIn();
-      await handleAuthSuccess();
-    } catch (err) {
-      console.error('Login error:', err);
-      setError('Ошибка входа: ' + (err.message || 'Неизвестная ошибка'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  }, [handleAuthSuccess, handleGsiCallbackFunction]); // Added handleGsiCallbackFunction to dependencies
 
-  if (isLoading) {
+  if (isLoading && !document.getElementById('googleSignInButtonContainer')) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-xl">Загрузка...</div>
@@ -83,18 +146,8 @@ const LoginPage = ({ onLogin }) => {
           )}
         </div>
         
-        <button
-          onClick={handleGoogleLogin}
-          disabled={isLoading}
-          className="w-full flex items-center justify-center gap-3 px-4 py-2 border border-gray-300 rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <img 
-            src="/api/placeholder/24/24"
-            alt="Google logo"
-            className="w-6 h-6"
-          />
-          {isLoading ? 'Выполняется вход...' : 'Войти через Google'}
-        </button>
+        <div id="googleSignInButtonContainer" className="flex justify-center"></div>
+
       </div>
     </div>
   );
