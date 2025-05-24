@@ -26,15 +26,43 @@ export default function App() {
       setIsInitializing(true);
       setError(null);
 
-      // Получаем Google access_token из Auth0
-      const accessToken = await getAccessTokenSilently({
-        authorizationParams: {
-          scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly"
+      // Получаем Google access_token из Auth0 user object
+      console.log('Auth0 user:', user);
+      
+      // Попробуем несколько способов получить Google токен
+      let googleAccessToken = null;
+      
+      // Способ 1: Из user identities
+      if (user?.identities) {
+        const googleIdentity = user.identities.find(id => id.provider === 'google-oauth2');
+        if (googleIdentity?.access_token) {
+          googleAccessToken = googleIdentity.access_token;
+          console.log('Found Google token in identities');
         }
-      });
+      }
+      
+      // Способ 2: Попробуем через getAccessTokenSilently
+      if (!googleAccessToken) {
+        try {
+          googleAccessToken = await getAccessTokenSilently({
+            authorizationParams: {
+              scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly"
+            }
+          });
+          console.log('Got token from getAccessTokenSilently');
+        } catch (error) {
+          console.error('Error getting token from getAccessTokenSilently:', error);
+        }
+      }
+
+      if (!googleAccessToken) {
+        throw new Error('Не удалось получить Google access token из Auth0');
+      }
+
+      console.log('Using Google access token:', googleAccessToken.substring(0, 20) + '...');
 
       // Инициализируем Google Sheets сервис с токеном
-      await auth0GoogleSheetsService.initialize(accessToken);
+      await auth0GoogleSheetsService.initialize(googleAccessToken);
       
       loadOrders();
       checkEditAccess();
