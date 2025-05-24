@@ -3,10 +3,11 @@ import { addDays, subDays, isSunday, max } from 'date-fns';
 import LoginPage from './components/LoginPage';
 import OrderDistributionTable from './components/OrderDistributionTable';
 import { googleSheetsService } from './services/googleSheetsService';
+import { useAuth0 } from './services/auth0Service';
 import './App.css';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { isAuthenticated, isLoading } = useAuth0();
   const [orders, setOrders] = useState([]);
   const [days, setDays] = useState([]);
   const [ordersMap, setOrdersMap] = useState({});
@@ -129,10 +130,18 @@ export default function App() {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-xl">Загрузка...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {!isAuthenticated ? (
-        <LoginPage onLogin={() => setIsAuthenticated(true)} />
+        <LoginPage />
       ) : (
         <OrderDistributionTable
           days={days}

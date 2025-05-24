@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { formatDate, getDayName } from '../utils/dateUtils';
 import ConfirmationModal from './ConfirmationModal';
-import { Plus, Minus, Table, Columns, PencilIcon, LayoutList, LayoutGrid, Coins } from 'lucide-react';
+import { Plus, Minus, Table, Columns, PencilIcon, LayoutList, LayoutGrid, Coins, LogOut } from 'lucide-react';
+import { useAuth0 } from '../services/auth0Service';
 
 const OrderDistributionTable = ({ 
   days,
@@ -168,6 +169,8 @@ const OrderDistributionTable = ({
     loadUserInfo();
   }, []);
 
+  const { logout } = useAuth0();
+
   return (
     <div className="p-4">
       <div className="fixed top-0 left-0 right-0 bg-gray-50 z-50 border-b border-gray-200">
@@ -210,6 +213,13 @@ const OrderDistributionTable = ({
               onClick={() => setView(prev => prev === 'table' ? 'kanban' : 'table')}
             >
               {view === 'table' ? <Columns className="w-6 h-6" /> : <Table className="w-6 h-6" />}
+            </button>
+            <button
+              className="p-2 border rounded hover:bg-gray-100 text-red-600"
+              onClick={() => logout({ returnTo: window.location.origin })}
+              title="Выйти"
+            >
+              <LogOut className="w-6 h-6" />
             </button>
           </div>
         </div>
