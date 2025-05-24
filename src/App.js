@@ -32,8 +32,14 @@ export default function App() {
       // Попробуем несколько способов получить Google токен
       let googleAccessToken = null;
       
-      // Способ 1: Из user identities
-      if (user?.identities) {
+      // Способ 1: Из user_metadata (сохраняется через Action)
+      if (user?.user_metadata?.google_access_token) {
+        googleAccessToken = user.user_metadata.google_access_token;
+        console.log('Found Google token in user_metadata');
+      }
+      
+      // Способ 2: Из user identities (должно работать после настройки Advanced Settings)
+      if (!googleAccessToken && user?.identities) {
         const googleIdentity = user.identities.find(id => id.provider === 'google-oauth2');
         if (googleIdentity?.access_token) {
           googleAccessToken = googleIdentity.access_token;
@@ -41,22 +47,27 @@ export default function App() {
         }
       }
       
-      // Способ 2: Попробуем через getAccessTokenSilently
+      // Способ 3: Попробуем использовать Auth0 Management API
       if (!googleAccessToken) {
         try {
-          googleAccessToken = await getAccessTokenSilently({
+          // Для тестирования попробуем использовать тот же токен
+          // В продакшне нужно будет настроить Management API
+          const auth0Token = await getAccessTokenSilently({
             authorizationParams: {
-              scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly"
+              scope: "openid profile email https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly"
             }
           });
-          console.log('Got token from getAccessTokenSilently');
+          
+          // Это временное решение - может не работать
+          googleAccessToken = auth0Token;
+          console.log('Using Auth0 token as fallback - may not work for Google API');
         } catch (error) {
           console.error('Error getting token from getAccessTokenSilently:', error);
         }
       }
 
       if (!googleAccessToken) {
-        throw new Error('Не удалось получить Google access token из Auth0');
+        throw new Error('Не удалось получить Google access token из Auth0. Проверьте настройки Google Social Connection.');
       }
 
       console.log('Using Google access token:', googleAccessToken.substring(0, 20) + '...');
